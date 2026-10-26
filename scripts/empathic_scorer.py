@@ -6,7 +6,7 @@ experts (Empathic-Insight-Voice-Plus), all on frozen BUD-E-Whisper embeddings.
 The 55 affect/attribute experts share one architecture (1500x768 -> 64 -> 64 ->
 32 -> 16 -> 1).  Loading them as 55 separate 74M-parameter modules wastes both
 time and VRAM, so their projection weights are fused into one bank and applied
-with 54 matmuls per batch.  The tiny MLP heads are applied in the same loop.
+with 55 matmuls per batch.  The tiny MLP heads are applied in the same loop.
 """
 from __future__ import annotations
 
@@ -141,7 +141,7 @@ class EmpathicScorer:
         for e in range(self.n_emotion):
             h = F.linear(flat16, self.pw[e], self.pb[e]).float()
             emo.append(self._mlp_forward(h, tuple(x[e] for x in self.mlp)))
-        emo = torch.cat(emo, dim=1).float().cpu().numpy()  # [B,54]
+        emo = torch.cat(emo, dim=1).float().cpu().numpy()  # [B,55]
 
         qual = []
         for e in range(len(self.quality_names)):
