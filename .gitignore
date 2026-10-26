@@ -29,3 +29,6 @@ Thumbs.db
 # secrets
 .env
 *.token
+
+# third-party model cards kept locally for reference
+docs/vendor/
