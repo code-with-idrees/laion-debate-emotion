@@ -10,7 +10,6 @@ import argparse
 import csv
 import json
 import sys
-import traceback
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +18,7 @@ import soxr
 
 sys.path.insert(0, str(Path(__file__).parent))
 import config as C
+from parallel import run_rows
 
 PAD_S = 0.05
 
@@ -35,7 +35,8 @@ def load_manifest(ids=None, limit=0):
     return rows
 
 
-def cut_file(fid, overwrite=False):
+def cut_file(row, overwrite=False):
+    fid = row["file_id"]
     turns_path = C.TURNS / f"{fid}.jsonl"
     if not turns_path.exists():
         return {"file_id": fid, "status": "missing_turns"}
@@ -45,7 +46,7 @@ def cut_file(fid, overwrite=False):
         return None
     outdir.mkdir(parents=True, exist_ok=True)
 
-    audio_path = C.AUDIO / f"{fid}.wav"
+    audio_path = Path(row.get("path") or C.AUDIO / f"{fid}.wav")
     if not audio_path.exists():
         return {"file_id": fid, "status": "missing_audio"}
 
@@ -91,18 +92,22 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--ids", nargs="*", default=None)
     ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--jobs", type=int, default=0,
+                    help="worker processes (default: all cores)")
     args = ap.parse_args()
 
     rows = load_manifest(args.ids, args.limit)
-    print(f"files: {len(rows)}")
-    for i, r in enumerate(rows, 1):
-        try:
-            st = cut_file(r["file_id"], args.overwrite)
-            if st:
-                print(f"[{i}/{len(rows)}] {r['file_id']} -> {st}", flush=True)
-        except Exception:
-            print(f"FAIL {r['file_id']}", flush=True)
-            traceback.print_exc()
+    print(f"files: {len(rows)}", flush=True)
+    for i, total, row, status, payload in run_rows(
+            rows, cut_file, args.jobs, args.overwrite):
+        fid = row["file_id"]
+        if status == "error":
+            print(f"FAIL {fid}", flush=True)
+            print(payload, flush=True)
+            (C.SNIPPETS / f"{fid}.error.txt").write_text(payload, encoding="utf-8")
+            continue
+        if payload:
+            print(f"[{i}/{total}] {fid} -> {payload}", flush=True)
 
 
 if __name__ == "__main__":

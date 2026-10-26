@@ -20,7 +20,6 @@ import csv
 import json
 import math
 import sys
-import traceback
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -28,6 +27,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 import config as C
+from parallel import run_rows
 
 
 def load_manifest(ids=None, limit=0):
@@ -234,28 +234,38 @@ def process(fid, overwrite=False):
     return stats
 
 
+def process_row(row, overwrite=False):
+    """Manifest row -> stats dict (worker entry point for the process pool)."""
+    return process(row["file_id"], overwrite)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--ids", nargs="*", default=None)
     ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--jobs", type=int, default=0,
+                    help="worker processes (default: all cores)")
     args = ap.parse_args()
 
     rows = load_manifest(args.ids, args.limit)
-    print(f"files: {len(rows)}")
+    print(f"files: {len(rows)}", flush=True)
     ok = 0
-    for i, r in enumerate(rows, 1):
-        try:
-            st = process(r["file_id"], args.overwrite)
-            if st:
-                ok += 1
-                print(f"[{i}/{len(rows)}] {r['file_id']} -> {st['n_turns']} turns, "
-                      f"{st['n_speakers']} speakers, overlap {st['overlap_fraction']}", flush=True)
-        except Exception:
-            print(f"FAIL {r['file_id']}", flush=True)
-            traceback.print_exc()
-            (C.TURNS / f"{r['file_id']}.error.txt").write_text(
-                traceback.format_exc(), encoding="utf-8")
+    for i, total, row, status, payload in run_rows(
+            rows, process_row, args.jobs, args.overwrite):
+        fid = row["file_id"]
+        if status == "error":
+            print(f"FAIL {fid}", flush=True)
+            print(payload, flush=True)
+            (C.TURNS / f"{fid}.error.txt").write_text(payload, encoding="utf-8")
+            continue
+        st = payload
+        if st:
+            ok += 1
+            print(f"[{i}/{total}] {fid} -> {st.get('n_turns', st.get('status'))} turns"
+                  + (f", {st['n_speakers']} speakers, "
+                     f"overlap {st['overlap_fraction']}" if "n_speakers" in st else ""),
+                  flush=True)
     print(f"done {ok}")
 
 

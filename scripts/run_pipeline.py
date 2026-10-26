@@ -35,6 +35,7 @@ TAKES_LIMIT = {"download", "diarize", "transcribe", "turns", "snippets",
                "empathic", "voicenet", "voiceclap", "assemble"}
 TAKES_IDS = TAKES_LIMIT
 TAKES_DEVICE = {"diarize", "empathic", "voicenet", "voiceclap"}
+CPU_STAGES = {"turns", "snippets", "assemble"}
 
 
 def main():
@@ -45,6 +46,8 @@ def main():
     ap.add_argument("--ids", nargs="*", default=None)
     ap.add_argument("--workers", type=int, default=4, help="download workers")
     ap.add_argument("--batch-size", type=int, default=None)
+    ap.add_argument("--jobs", type=int, default=0,
+                    help="worker processes for CPU stages (default: all cores)")
     ap.add_argument("--device", default=None)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
@@ -74,6 +77,8 @@ def main():
             cmd += ["--device", args.device]
         if args.batch_size and name in ("empathic", "voicenet", "voiceclap"):
             cmd += ["--batch-size", str(args.batch_size)]
+        if args.jobs and name in CPU_STAGES:
+            cmd += ["--jobs", str(args.jobs)]
         cmd += extra
 
         print(f"\n{'='*70}\n>>> {name}: {' '.join(cmd)}\n{'='*70}", flush=True)
