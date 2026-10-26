@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
 import time
 import traceback
@@ -51,7 +52,10 @@ def main():
     ap.add_argument("--beam-size", type=int, default=1)
     ap.add_argument("--language", default="en")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--cpu-threads", type=int, default=0,
+                    help="CTranslate2 CPU threads (default: all cores)")
     args = ap.parse_args()
+    cpu_threads = args.cpu_threads or (os.cpu_count() or 4)
 
     rows = load_manifest(args.ids, args.limit)
     rows = [r for r in rows if args.overwrite or not valid(C.TRANSCRIPTS / f"{r['file_id']}.json")]
@@ -61,7 +65,7 @@ def main():
 
     t0 = time.time()
     model = WhisperModel(args.model, device=args.device, compute_type="float16",
-                         cpu_threads=4, num_workers=1)
+                         cpu_threads=cpu_threads, num_workers=1)
     pipe = BatchedInferencePipeline(model=model)
     print(f"model loaded in {time.time()-t0:.1f}s")
 

@@ -79,6 +79,8 @@ def main():
             cmd += ["--batch-size", str(args.batch_size)]
         if args.jobs and name in CPU_STAGES:
             cmd += ["--jobs", str(args.jobs)]
+        if args.jobs and name == "transcribe":
+            cmd += ["--cpu-threads", str(args.jobs)]
         cmd += extra
 
         print(f"\n{'='*70}\n>>> {name}: {' '.join(cmd)}\n{'='*70}", flush=True)
