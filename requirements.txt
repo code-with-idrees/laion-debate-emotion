@@ -1,0 +1,21 @@
+# Pinned to the versions the pipeline was validated with (Windows, RTX 3090, CUDA 11.8).
+# Install with:  pip install -r requirements.txt
+#
+# CUDA-12 runtime DLLs are needed by CTranslate2/faster-whisper even on a cu118
+# torch build; config.py puts them on PATH automatically.
+torch==2.7.1
+transformers==5.20.2
+sentence-transformers==6.2.0
+faster-whisper==1.2.1
+huggingface_hub==2.3.0
+hf_transfer>=0.1.9
+pyarrow==26.0.0
+numpy==2.4.6
+soundfile==0.14.0
+soxr==1.1.0
+librosa>=0.10
+requests==2.33.1
+tqdm
+
+# Optional: only needed for --quant 8bit/4bit on VoiceCLAP
+# bitsandbytes>=0.45

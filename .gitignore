@@ -1,0 +1,31 @@
+# ---- large / regenerable artifacts -----------------------------------------
+cache/
+data/
+dataset/
+logs/
+manifests/
+models/
+outputs/
+
+# partial downloads
+*.part
+*.blocks.json
+*.incomplete
+*.tmp
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# secrets
+.env
+*.token
