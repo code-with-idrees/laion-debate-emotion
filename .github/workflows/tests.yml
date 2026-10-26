@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # Only the CPU-side test dependencies. torch, transformers and the model
+      # weights are needed to run the pipeline, not to test its pure logic.
+      - name: Install test dependencies
+        run: pip install numpy requests pyarrow
+
+      - name: Byte-compile every script
+        run: python -m compileall -q scripts examples tests
+
+      - name: Run offline unit tests
+        run: python -m unittest discover -s tests -v

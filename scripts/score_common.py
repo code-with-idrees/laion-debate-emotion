@@ -15,8 +15,6 @@ import json
 import sys
 from pathlib import Path
 
-import torch
-
 sys.path.insert(0, str(Path(__file__).parent))
 import config as C
 
@@ -109,6 +107,8 @@ def make_batches(items, max_batch: int, max_seconds: float):
 
 def score_with_retry(score_batch, items, depth: int = 0):
     """Call score_batch(items); on CUDA OOM split the batch in half and retry."""
+    import torch  # imported lazily so the module loads without a GPU stack
+
     try:
         return score_batch(items)
     except torch.cuda.OutOfMemoryError:
