@@ -22,6 +22,7 @@ import sys
 import time
 import traceback
 from collections import Counter, defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +32,7 @@ import pyarrow.parquet as pq
 sys.path.insert(0, str(Path(__file__).parent))
 import config as C
 import score_common as S
+from parallel import default_jobs
 
 EMB_REL = "outputs/embeddings/voiceclap"
 
@@ -97,10 +99,11 @@ def _json_default(o):
     return str(o)
 
 
-def collect_rows(fid, stats):
+def collect_rows(fid):
+    """Build every Parquet row of one recording, plus its stats delta."""
     turns_p = C.TURNS / f"{fid}.jsonl"
     if not turns_p.exists():
-        return None, "no_turns"
+        return None, "no_turns", None
     turns = [json.loads(l) for l in turns_p.open(encoding="utf-8") if l.strip()]
     emp = read_jsonl(S.out_path("empathic", fid))
     vn = read_jsonl(S.out_path("voicenet", fid))
@@ -111,27 +114,40 @@ def collect_rows(fid, stats):
     for t in turns:
         sid = t["segment_id"]
         e, n, c = emp.get(sid), vn.get(sid), vc.get(sid)
-        if c is not None:
+        # Only reference an embedding row when the sidecar actually exists.
+        if c is not None and emb_file:
             row_idx = emb_row
         else:
             row_idx = None
         rows.append(build_record(fid, t, e, n, c, emb_file, row_idx))
-        if c is not None:
+        if row_idx is not None:
             emb_row += 1
 
-    stats["files"] += 1
-    stats["turns"] += len(rows)
-    stats["speech_s"] += sum(r["duration"] for r in rows)
-    stats["with_empathic"] += sum(1 for r in rows if r["empathic"] is not None)
-    stats["with_voicenet"] += sum(1 for r in rows if r["voicenet"] is not None)
-    stats["with_voiceclap"] += sum(1 for r in rows if r["voiceclap_top5"] is not None)
-    for r in rows:
-        if r["empathic_top5"]:
-            stats["empathic_top1"][r["empathic_top5"][0]["label"]] += 1
-        if r["voiceclap_best"]:
-            stats["voiceclap_top1"][r["voiceclap_best"]] += 1
-        stats["speakers"].add(r["speaker"])
-    return rows, None
+    delta = {
+        "files": 1,
+        "turns": len(rows),
+        "speech_s": sum(r["duration"] for r in rows),
+        "with_empathic": sum(1 for r in rows if r["empathic"] is not None),
+        "with_voicenet": sum(1 for r in rows if r["voicenet"] is not None),
+        "with_voiceclap": sum(1 for r in rows if r["voiceclap_top5"] is not None),
+        "empathic_top1": Counter(r["empathic_top5"][0]["label"]
+                                 for r in rows if r["empathic_top5"]),
+        "voiceclap_top1": Counter(r["voiceclap_best"]
+                                  for r in rows if r["voiceclap_best"]),
+        "speakers": {r["speaker"] for r in rows},
+    }
+    return rows, None, delta
+
+
+def merge_stats(stats, delta):
+    if not delta:
+        return
+    for k in ("files", "turns", "speech_s", "with_empathic", "with_voicenet",
+              "with_voiceclap"):
+        stats[k] += delta[k]
+    stats["empathic_top1"].update(delta["empathic_top1"])
+    stats["voiceclap_top1"].update(delta["voiceclap_top1"])
+    stats["speakers"] |= delta["speakers"]
 
 
 def main():
@@ -140,6 +156,8 @@ def main():
     ap.add_argument("--ids", nargs="*", default=None)
     ap.add_argument("--out", default=None)
     ap.add_argument("--sample-rows", type=int, default=500)
+    ap.add_argument("--jobs", type=int, default=0,
+                    help="worker processes for parsing scores (default: all cores)")
     args = ap.parse_args()
 
     manifest = S.load_manifest(args.ids, args.limit)
@@ -153,7 +171,6 @@ def main():
              "with_voicenet": 0, "with_voiceclap": 0,
              "empathic_top1": Counter(), "voiceclap_top1": Counter(),
              "speakers": set()}
-    stats["speakers"] = set()
 
     schema = None
     skipped = []
@@ -161,12 +178,16 @@ def main():
     deferred = []
     t0 = time.time()
     writer = None
+    jobs = default_jobs() if not args.jobs else max(1, args.jobs)
+    order = sorted(manifest, key=lambda r: r["file_id"])
+    fids = [m["file_id"] for m in order]
+    pool = ProcessPoolExecutor(max_workers=jobs) if jobs > 1 and len(fids) > 1 else None
     try:
+        results = (pool.map(collect_rows, fids, chunksize=1) if pool
+                   else map(collect_rows, fids))
         # Pass 1: fully-scored files establish the schema.
-        order = sorted(manifest, key=lambda r: r["file_id"])
-        for i, m in enumerate(order, 1):
-            fid = m["file_id"]
-            rows, err = collect_rows(fid, stats)
+        for i, (fid, (rows, err, delta)) in enumerate(zip(fids, results), 1):
+            merge_stats(stats, delta)
             if err:
                 skipped.append({"file_id": fid, "reason": err})
                 continue
@@ -203,6 +224,8 @@ def main():
             except Exception as e:
                 skipped.append({"file_id": fid, "reason": f"schema:{e}"})
     finally:
+        if pool is not None:
+            pool.shutdown(wait=True, cancel_futures=True)
         if writer is not None:
             writer.close()
 
