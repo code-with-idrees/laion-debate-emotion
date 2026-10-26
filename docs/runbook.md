@@ -32,18 +32,22 @@ python scripts\run_pipeline.py --from diarize                 # ~2 days of GPU
 Downloads are independent of GPU work, so they can overlap with scoring. Do not
 run two GPU stages at once: each model wants most of the 24 GB.
 
+Turn building, snippet cutting and assembly fan out over every logical core by
+default (`--jobs N` to cap it, e.g. `--jobs 2` while a GPU stage is running so
+data loading still gets CPU).
+
 ## Measured throughput
 
 | stage | measured | full corpus |
 |-------|----------|-------------|
 | diarization | 620x RTFx | ~2.2 h |
 | ASR (large-v3, batch 16) | 36-39x RTFx | ~36 h |
-| turn building | CPU only, seconds per file | ~1 h |
-| snippet cutting | ~10x RTFx (FLAC encode) | ~5 h |
+| turn building | CPU, all cores | ~1 h |
+| snippet cutting | CPU, all cores (FLAC encode) | ~5 h |
 | Empathic (59 experts) | one encoder pass per batch | ~10-20 h |
 | VoiceNet | encoder + 114 heads | ~5-10 h |
 | VoiceCLAP (7B) | 3-6 clips/s | 3-5 days |
-| assembly | one pass over JSONL | ~2 h |
+| assembly | CPU, all cores | ~30 min |
 
 VoiceCLAP dominates. If time matters more than full embeddings, `--quant 8bit`
 fits more headroom for a larger batch; the embedding stays 3584-d.

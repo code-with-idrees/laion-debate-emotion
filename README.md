@@ -40,14 +40,20 @@ Smoke test on a subset:
 python scripts\run_pipeline.py --limit 5 --from diarize
 ```
 
+Turn building, snippet cutting and assembly are CPU-bound and independent per
+recording, so they use every core by default. Pass `--jobs N` (to the stage or
+to `run_pipeline.py`) to reserve cores for something else.
+
 ## Design notes
 
 - **Diarization**: Nemotron 3 native Transformers implementation
   (`nemotron_diarize.py`), offline 30.4 s chunks (27.2 s scored + 3.2 s right
-  context) with a speaker cache; ~620x RTFx on an RTX 3090. Streaming modes are
+  context) with a speaker cache; ~165x RTFx on an RTX 3090 once the first
+  chunk has warmed the model (a 1.6 min file measures ~73x). Streaming modes are
   available via `02_diarize.py --mode`.
 - **ASR**: faster-whisper `large-v3` int8/fp16 CT2, `vad_filter=True`,
-  `condition_on_previous_text=False`, word timestamps required for alignment.
+  `condition_on_previous_text=False`, word timestamps required for alignment;
+  40-60x RTFx.
 - **Turns**: 10 ms speaker activity matrix from diarization segments; each word
   goes to the speaker with the largest temporal overlap (midpoint tie-break);
   consecutive same-speaker words merge unless the speaker changes, the pause
