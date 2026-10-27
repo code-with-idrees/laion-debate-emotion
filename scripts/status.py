@@ -14,6 +14,17 @@ def count_files(d: Path, pattern: str) -> int:
     return sum(1 for _ in d.glob(pattern)) if d.exists() else 0
 
 
+def count_for_ids(d: Path, pattern: str, ids: set[str], suffix: str) -> int:
+    """Count outputs that belong to manifest rows.
+
+    Transcripts are built for the whole corpus in one pass, so a raw file count
+    reads as 20,000% while the download is still at 14 recordings.
+    """
+    if not d.exists():
+        return 0
+    return sum(1 for fid in ids if (d / f"{fid}{suffix}").exists())
+
+
 def manifest_ids():
     p = C.MANIFESTS / "files.csv"
     if not p.exists():
@@ -33,13 +44,14 @@ def dir_size_gb(d: Path) -> float:
 def bar(done: int, total: int, width: int = 24) -> str:
     if not total:
         return " " * width
-    n = int(width * done / total)
+    n = max(0, min(width, int(width * done / total)))
     return "#" * n + "." * (width - n)
 
 
 def main():
     ok, all_rows = manifest_ids()
     n = len(ok)
+    ids = {r["file_id"] for r in ok}
     print(f"root        {C.ROOT}")
     print(f"dataset     {C.DATASET_REPO}")
     print(f"manifest    {len(all_rows)} rows, {n} usable")
@@ -48,21 +60,25 @@ def main():
         print(f"errors      {len(errs)}")
 
     stages = [
-        ("diarization", C.DIAR, "*.json"),
-        ("transcripts", C.TRANSCRIPTS, "*.json"),
-        ("turns", C.TURNS, "*.jsonl"),
-        ("snippets", C.SNIPPETS, "*.index.jsonl"),
-        ("empathic", C.SCORES, "*.empathic.jsonl"),
-        ("voicenet", C.SCORES, "*.voicenet.jsonl"),
-        ("voiceclap", C.SCORES, "*.voiceclap.jsonl"),
+        ("diarization", C.DIAR, "*.json", ".json"),
+        ("transcripts", C.TRANSCRIPTS, "*.json", ".json"),
+        ("turns", C.TURNS, "*.jsonl", ".jsonl"),
+        ("snippets", C.SNIPPETS, "*.index.jsonl", ".index.jsonl"),
+        ("empathic", C.SCORES, "*.empathic.jsonl", ".empathic.jsonl"),
+        ("voicenet", C.SCORES, "*.voicenet.jsonl", ".voicenet.jsonl"),
+        ("voiceclap", C.SCORES, "*.voiceclap.jsonl", ".voiceclap.jsonl"),
     ]
-    for name, d, pat in stages:
-        c = count_files(d, pat)
-        pct = f"{100*c/n:5.1f}%" if n else "  n/a"
+    for name, d, pat, suffix in stages:
+        c = count_for_ids(d, pat, ids, suffix)
+        pct = f"{min(100.0, 100 * c / n):5.1f}%" if n else "  n/a"
         print(f"{name:12s} {c:6d}/{n:<6d} {pct} [{bar(c, n)}] {dir_size_gb(d):8.2f} GB")
 
+    skipped = count_files(C.TURNS, "*.skip.json")
+    if skipped:
+        print(f"{'skipped':12s} {skipped:6d} recordings with no usable transcript")
+
     emb = C.EMBEDDINGS / "voiceclap"
-    ne = count_files(emb, "*.npy")
+    ne = count_for_ids(emb, "*.npy", ids, ".npy")
     print(f"{'embeddings':12s} {ne:6d}/{n:<6d}       [{bar(ne, n)}] {dir_size_gb(emb):8.2f} GB")
 
     pq_file = C.DATASET / "data" / "train-00000-of-00001.parquet"
