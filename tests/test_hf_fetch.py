@@ -124,6 +124,29 @@ class TestDownload(unittest.TestCase):
         self.assertTrue(ok, msg)
         self.assertEqual(sorted(d.requests), [(20, 29), (30, 39)])
 
+    def test_truncated_state_is_salvaged(self):
+        """A kill mid-checkpoint must not throw away finished blocks."""
+        dest = self.dir / "f.bin"
+        part = dest.with_name(dest.name + ".part")
+        state = dest.with_name(dest.name + ".blocks.json")
+        # Blocks 0 and 1 were written and recorded; the JSON was cut while
+        # block 2's index was being appended.
+        part.write_bytes(pattern(0, 20) + b"\0" * 20)
+        state.write_text('{"block": 10, "done": [0, 1, 2')
+
+        d = FakeDownloader(token="x", block_mb=10 / (1024 * 1024))
+        ok, msg = d.download("r", "p", dest, self.size)
+        self.assertTrue(ok, msg)
+        # Only blocks 2 and 3 are fetched again.
+        self.assertEqual(sorted(d.requests), [(20, 29), (30, 39)])
+
+    def test_state_write_is_atomic(self):
+        state = self.dir / "f.blocks.json"
+        d = self.dl()
+        d._save_state(state, {0, 1})
+        self.assertEqual(json.loads(state.read_text())["done"], [0, 1])
+        self.assertFalse(state.with_name(state.name + ".tmp").exists())
+
     def test_url_layout(self):
         d = self.dl()
         self.assertEqual(

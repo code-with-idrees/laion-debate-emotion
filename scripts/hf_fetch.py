@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -89,6 +90,40 @@ class Downloader:
                 time.sleep(min(30, 2 * (attempt + 1)))
         return False
 
+    # ------------------------------------------------------------------ #
+    def _save_state(self, state_p: Path, done: set[int]) -> None:
+        """Atomically checkpoint finished blocks.
+
+        A plain write_text() leaves truncated JSON when the process is killed,
+        and truncated state made the next run re-download all 1,064 blocks of an
+        18 GB file - expensive at 1 MB/s over a flaky link.
+        """
+        tmp = state_p.with_name(state_p.name + ".tmp")
+        tmp.write_text(json.dumps({"block": self.block, "done": sorted(done)}))
+        os.replace(tmp, state_p)
+
+    def _load_state(self, state_p: Path, n_blocks: int) -> set[int]:
+        """Read the checkpoint, salvaging indices from a truncated file."""
+        try:
+            st = json.loads(state_p.read_text())
+        except Exception:
+            # Killed mid-write: blocks recorded before the truncation were
+            # written to the .part file first, so they are still good. The
+            # final number may be a partial index ("..., 23" cut to ", 2"), so
+            # drop it unless the JSON happened to end cleanly.
+            text = state_p.read_text(errors="ignore")
+            tail = text.split("[", 1)[-1]
+            nums = [int(x) for x in re.findall(r"\d+", tail)]
+            if not text.rstrip().endswith("]") and nums:
+                nums = nums[:-1]
+            return {i for i in nums if 0 <= i < n_blocks}
+        if isinstance(st, dict) and st.get("block") == self.block:
+            return {int(i) for i in st.get("done", [])}
+        if isinstance(st, list) and self.block == 16 * 1024 * 1024:
+            # legacy format, written by the first version (16 MB blocks)
+            return {int(i) for i in st}
+        return set()
+
     def download(self, repo: str, path: str, dest: Path, size: int,
                  assume_prefix: int = 0,
                  repo_type: str = "model") -> tuple[bool, str]:
@@ -101,18 +136,7 @@ class Downloader:
         n_blocks = max(1, -(-size // self.block)) if size else 1
         done = set()
         if part.exists() and part.stat().st_size == size and state_p.exists():
-            try:
-                st = json.loads(state_p.read_text())
-                # Guard: only trust checkpoints written with this block size.
-                if isinstance(st, dict) and st.get("block") == self.block:
-                    done = {int(i) for i in st.get("done", [])}
-                elif isinstance(st, list) and self.block == 16 * 1024 * 1024:
-                    # legacy format, written by the first version (16 MB blocks)
-                    done = {int(i) for i in st}
-                else:
-                    done = set()
-            except Exception:
-                done = set()
+            done = self._load_state(state_p, n_blocks)
         if not part.exists() or part.stat().st_size != size:
             # fresh (or size changed): preallocate
             with open(part, "wb") as fh:
@@ -123,8 +147,7 @@ class Downloader:
             # a verified prefix was seeded: every fully-covered block is done
             done = {i for i in range(n_blocks)
                     if (i + 1) * self.block <= assume_prefix}
-            state_p.write_text(json.dumps({"block": self.block,
-                                           "done": sorted(done)}))
+            self._save_state(state_p, done)
 
         todo = [i for i in range(n_blocks) if i not in done]
         if not todo:
@@ -146,8 +169,7 @@ class Downloader:
                 i, ok = f.result()
                 if ok:
                     done.add(i)
-                    state_p.write_text(json.dumps({"block": self.block,
-                                                   "done": sorted(done)}))
+                    self._save_state(state_p, done)
                 else:
                     failed.append(i)
 
