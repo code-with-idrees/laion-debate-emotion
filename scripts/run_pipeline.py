@@ -4,8 +4,9 @@ Each stage runs as its own subprocess so GPU memory is released between models.
 
   python run_pipeline.py                     # everything, resumable
   python run_pipeline.py --from snippets      # resume from a stage
-  python run_pipeline.py --stages diarize transcribe
+  python run_pipeline.py --stages diarize transcripts
   python run_pipeline.py --limit 5 --dry-run  # smoke test on 5 files
+  python run_pipeline.py --whisper-asr        # ignore the corpus transcripts
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ PY = sys.executable
 STAGES = [
     ("download", "01_download_dataset.py", []),
     ("diarize", "02_diarize.py", []),
-    ("transcribe", "03_transcribe.py", []),
+    ("transcripts", "03_load_transcripts.py", []),
     ("turns", "04_build_turns.py", []),
     ("snippets", "05_cut_snippets.py", []),
     ("empathic", "06_score_empathic.py", []),
@@ -31,10 +32,14 @@ STAGES = [
     ("assemble", "09_assemble_dataset.py", []),
 ]
 
-TAKES_LIMIT = {"download", "diarize", "transcribe", "turns", "snippets",
-               "empathic", "voicenet", "voiceclap", "assemble"}
+# Opt-in replacement for the "transcripts" stage: re-run Whisper instead of
+# using the corpus' published word timestamps.
+WHISPER_STAGE = ("transcribe", "03_transcribe.py", [])
+
+TAKES_LIMIT = {"download", "diarize", "transcripts", "transcribe", "turns",
+               "snippets", "empathic", "voicenet", "voiceclap", "assemble"}
 TAKES_IDS = TAKES_LIMIT
-TAKES_DEVICE = {"diarize", "empathic", "voicenet", "voiceclap"}
+TAKES_DEVICE = {"diarize", "transcribe", "empathic", "voicenet", "voiceclap"}
 CPU_STAGES = {"turns", "snippets", "assemble"}
 
 
@@ -49,8 +54,15 @@ def main():
     ap.add_argument("--jobs", type=int, default=0,
                     help="worker processes for CPU stages (default: all cores)")
     ap.add_argument("--device", default=None)
+    ap.add_argument("--whisper-asr", action="store_true",
+                    help="re-transcribe with Whisper instead of loading the "
+                         "corpus transcripts")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+
+    if args.whisper_asr:
+        names = [s[0] for s in STAGES]
+        STAGES[names.index("transcripts")] = WHISPER_STAGE
 
     names = [s[0] for s in STAGES]
     if args.stages:

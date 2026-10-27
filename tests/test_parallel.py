@@ -45,7 +45,8 @@ class TestRunRows(unittest.TestCase):
     def test_zero_jobs_means_auto(self):
         self.assertGreaterEqual(parallel.default_jobs(), 1)
         out = list(parallel.run_rows(ROWS[:2], worker, 0))
-        self.assertEqual([r["file_id"] for _, _, r, _, _ in out], ["a", "b"])
+        # Parallel workers finish in completion order, not submission order.
+        self.assertEqual({r["file_id"] for _, _, r, _, _ in out}, {"a", "b"})
 
     def test_empty(self):
         self.assertEqual(list(parallel.run_rows([], worker, 4)), [])
