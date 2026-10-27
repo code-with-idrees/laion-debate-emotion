@@ -13,7 +13,7 @@ Everything lives under `D:\LAION_Debate_Emotion`.
 | 00 | `scripts/00_download_models.py` | ranged, resumable download of all model weights | `models/` |
 | 01 | `scripts/01_download_dataset.py` | ranged, resumable download of the gated WAVs | `data/audio/`, `manifests/files.csv` |
 | 02 | `scripts/02_diarize.py` | Nemotron 3 Diarization, offline chunked mode | `outputs/diarization/<id>.json` |
-| 03 | `scripts/03_transcribe.py` | Whisper large-v3 (CT2), word timestamps | `outputs/transcripts/<id>.json` |
+| 03 | `scripts/03_load_transcripts.py` | load the corpus' published word timestamps | `outputs/transcripts/<id>.json` |
 | 04 | `scripts/04_build_turns.py` | word -> speaker alignment, turn building | `outputs/turns/<id>.jsonl` |
 | 05 | `scripts/05_cut_snippets.py` | one 16 kHz mono FLAC per turn | `outputs/snippets/<id>/*.flac` |
 | 06 | `scripts/06_score_empathic.py` | Empathic-Insight-Voice-Plus, 59 experts | `outputs/scores/<id>.empathic.jsonl` |
@@ -51,9 +51,14 @@ to `run_pipeline.py`) to reserve cores for something else.
   context) with a speaker cache; ~165x RTFx on an RTX 3090 once the first
   chunk has warmed the model (a 1.6 min file measures ~73x). Streaming modes are
   available via `02_diarize.py --mode`.
-- **ASR**: faster-whisper `large-v3` int8/fp16 CT2, `vad_filter=True`,
-  `condition_on_previous_text=False`, word timestamps required for alignment;
-  40-60x RTFx.
+- **Transcripts**: the corpus ships its own word-level transcripts
+  (`teamsleeping/sleeping-debate-transcribe/transcribe.jsonl`, 736 MB, 2,890
+  records), so `03_load_transcripts.py` loads them instead of running ASR over
+  436 GB a second time. Words are normalised to Whisper's shape (leading space,
+  float timings) and grouped into 12 s / 0.4 s-pause segments, which is all
+  `04_build_turns.py` needs. `03_transcribe.py` (Whisper large-v3 CT2,
+  `vad_filter=True`, 40-60x RTFx) remains available via
+  `run_pipeline.py --whisper-asr` for recordings the published file misses.
 - **Turns**: 10 ms speaker activity matrix from diarization segments; each word
   goes to the speaker with the largest temporal overlap (midpoint tie-break);
   consecutive same-speaker words merge unless the speaker changes, the pause

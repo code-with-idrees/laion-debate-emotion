@@ -25,9 +25,16 @@ python scripts\00_download_models.py --only voicenet          # 0.5 GB, minutes
 python scripts\00_download_models.py --only bude              # 1.0 GB, minutes
 python scripts\00_download_models.py --only voiceclap         # 18 GB, hours
 python scripts\00_download_models.py --only empathic          # 16 GB, hours
-python scripts\01_download_dataset.py --workers 4             # 436 GB, ~1-3 days
-python scripts\run_pipeline.py --from diarize                 # ~2 days of GPU
+python scripts\01_download_dataset.py --workers 8             # 436 GB, days
+python scripts\live_pipeline.py                               # GPU work as files land
 ```
+
+`live_pipeline.py` runs 03 -> 04 -> 05 over whatever the downloader has
+finished, so diarization and snippet cutting finish days before the last WAV
+arrives. Transcripts are not re-generated: `03_load_transcripts.py` pulls the
+corpus' own 736 MB `transcribe.jsonl` once and maps it onto
+`outputs/transcripts/<id>.json`. Only if a recording is missing there do you
+need `run_pipeline.py --whisper-asr` for that id.
 
 Downloads are independent of GPU work, so they can overlap with scoring. Do not
 run two GPU stages at once: each model wants most of the 24 GB.
@@ -41,7 +48,8 @@ data loading still gets CPU).
 | stage | measured | full corpus |
 |-------|----------|-------------|
 | diarization | 620x RTFx | ~2.2 h |
-| ASR (large-v3, batch 16) | 36-39x RTFx | ~36 h |
+| transcripts (published file) | 736 MB download, seconds per file | ~1 h |
+| ASR (only with `--whisper-asr`) | 36-39x RTFx | ~36 h |
 | turn building | CPU, all cores | ~1 h |
 | snippet cutting | CPU, all cores (FLAC encode) | ~5 h |
 | Empathic (59 experts) | one encoder pass per batch | ~10-20 h |
