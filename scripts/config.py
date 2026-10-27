@@ -34,6 +34,10 @@ for _p in (CACHE, DATA, AUDIO, MODELS, OUT, DIAR, TRANSCRIPTS, TURNS,
 
 # --- Hugging Face ---------------------------------------------------------
 DATASET_REPO = "teamsleeping/sleeping-debate"
+# The corpus ships its own word-level transcripts; 03 loads these instead of
+# re-running Whisper over 436 GB of audio.
+TRANSCRIPT_REPO = "teamsleeping/sleeping-debate-transcribe"
+TRANSCRIPT_JSONL = DATA / "source" / "transcribe.jsonl"
 os.environ.setdefault("HF_HOME", str(CACHE))
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 # HF_HUB_ENABLE_HF_TRANSFER is opt-in because xet handles our downloads.
@@ -83,6 +87,12 @@ FRAME_MS = 10
 TURN_MAX_S = 30.0
 TURN_MIN_S = 0.35
 TURN_GAP_S = 0.8
+
+# --- Machine / corpus facts ------------------------------------------------
+N_CPU = os.cpu_count() or 1
+# Number of WAVs in teamsleeping/sleeping-debate; live_pipeline stops once the
+# manifest reaches this many finished recordings.
+DATASET_N_FILES = 2890
 
 # VoiceCLAP text probes (emotion + attribute + voice-quality vocabulary).
 EMOTION_PROMPTS = [
