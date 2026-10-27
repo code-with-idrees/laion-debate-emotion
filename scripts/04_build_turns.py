@@ -156,10 +156,23 @@ def process(fid, overwrite=False):
     if out_path.exists() and not overwrite:
         return None
     if not dpath.exists() or not tpath.exists():
+        # Eleven corpus recordings have an empty transcript record (no word
+        # timestamps) and two have none at all. Mark them so the driver stops
+        # counting them as pending work; --whisper-asr covers them later.
+        (C.TURNS / f"{fid}.skip.json").write_text(json.dumps({
+            "file_id": fid,
+            "reason": "missing_input",
+            "diarization": dpath.exists(),
+            "transcript": tpath.exists(),
+        }), encoding="utf-8")
         return {"file_id": fid, "status": "missing_input"}
 
     diar = json.loads(dpath.read_text(encoding="utf-8"))
     tr = json.loads(tpath.read_text(encoding="utf-8"))
+    if not tr.get("segments"):
+        (C.TURNS / f"{fid}.skip.json").write_text(json.dumps({
+            "file_id": fid, "reason": "empty_transcript"}), encoding="utf-8")
+        return {"file_id": fid, "status": "empty_transcript"}
     duration = float(diar.get("duration") or tr.get("duration") or 0.0)
     speaker_ids, act, n_frames = build_activity(diar.get("segments", []), duration)
 
@@ -250,7 +263,9 @@ def main():
 
     rows = load_manifest(args.ids)
     if not args.overwrite:
-        rows = [r for r in rows if not (C.TURNS / f"{r['file_id']}.jsonl").exists()]
+        rows = [r for r in rows
+                if not (C.TURNS / f"{r['file_id']}.jsonl").exists()
+                and not (C.TURNS / f"{r['file_id']}.skip.json").exists()]
     if args.limit:
         rows = rows[:args.limit]
     print(f"files: {len(rows)}", flush=True)

@@ -30,17 +30,21 @@ PY = sys.executable
 
 # stage -> (script, output used to decide whether a file is done, extra args)
 STAGES = {
-    "transcripts": ("03_load_transcripts.py",
-                    lambda fid: (C.TRANSCRIPTS / f"{fid}.json").exists(), []),
+    "transcripts": ("03_load_transcripts.py", None, []),
     "diarize": ("02_diarize.py", lambda fid: (C.DIAR / f"{fid}.json").exists(), []),
-    "turns": ("04_build_turns.py", lambda fid: (C.TURNS / f"{fid}.jsonl").exists(), []),
+    "turns": ("04_build_turns.py",
+              lambda fid: (C.TURNS / f"{fid}.jsonl").exists()
+              or (C.TURNS / f"{fid}.skip.json").exists(), []),
     "snippets": ("05_cut_snippets.py",
-                 lambda fid: (C.SNIPPETS / f"{fid}.index.jsonl").exists(), []),
+                 lambda fid: (C.SNIPPETS / f"{fid}.index.jsonl").exists()
+                 or (C.TURNS / f"{fid}.skip.json").exists(), []),
 }
 
 # A stage that only takes --limit is wrong for 03: it streams the whole
-# published transcript file and skips what is already on disk.
+# published transcript file and skips what is already on disk. Its pending
+# count is global rather than per file, since one pass covers the corpus.
 NO_LIMIT = {"transcripts"}
+GLOBAL_STAGES = {"transcripts"}
 
 
 def manifest_rows():
@@ -54,8 +58,13 @@ def manifest_rows():
 def pending_counts(rows, stages):
     out = {}
     for name in stages:
-        _, done, _ = STAGES[name]
-        out[name] = sum(1 for r in rows if not done(r["file_id"]))
+        if name in GLOBAL_STAGES:
+            # One pass covers every recording: pending only until it has run.
+            done = (C.MANIFESTS / "transcript_coverage.json").exists()
+            out[name] = 0 if done else len(rows)
+            continue
+        _, done_fn, _ = STAGES[name]
+        out[name] = sum(1 for r in rows if not done_fn(r["file_id"]))
     return out
 
 
