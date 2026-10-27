@@ -39,6 +39,18 @@ need `run_pipeline.py --whisper-asr` for that id.
 Downloads are independent of GPU work, so they can overlap with scoring. Do not
 run two GPU stages at once: each model wants most of the 24 GB.
 
+The corpus pull is the long pole and the link is unreliable: it measures
+0.2-3.4 MB/s depending on the hour, and a block that fails every retry marks its
+file `error`. Keep a supervisor loop around it so a bad file is retried instead
+of silently dropped:
+
+```powershell
+# logs\run_corpus.ps1: repeat 01 until every manifest row is ok, backing off
+# five minutes when a pass makes no progress
+powershell -ExecutionPolicy Bypass -File logs\run_corpus.ps1
+python scripts\manifest_ok.py --verbose     # {'ok': 19, 'error': 0, 'total': 19}
+```
+
 Turn building, snippet cutting and assembly fan out over every logical core by
 default (`--jobs N` to cap it, e.g. `--jobs 2` while a GPU stage is running so
 data loading still gets CPU).

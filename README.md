@@ -11,7 +11,7 @@ Everything lives under `D:\LAION_Debate_Emotion`.
 | # | script | what it does | output |
 |---|--------|--------------|--------|
 | 00 | `scripts/00_download_models.py` | ranged, resumable download of all model weights | `models/` |
-| 01 | `scripts/01_download_dataset.py` | ranged, resumable download of the gated WAVs | `data/audio/`, `manifests/files.csv` |
+| 01 | `scripts/01_download_dataset.py` | ranged, resumable download of the gated WAVs (`scripts\manifest_ok.py` counts progress) | `data/audio/`, `manifests/files.csv` |
 | 02 | `scripts/02_diarize.py` | Nemotron 3 Diarization, offline chunked mode | `outputs/diarization/<id>.json` |
 | 03 | `scripts/03_load_transcripts.py` | load the corpus' published word timestamps | `outputs/transcripts/<id>.json` |
 | 04 | `scripts/04_build_turns.py` | word -> speaker alignment, turn building | `outputs/turns/<id>.jsonl` |
