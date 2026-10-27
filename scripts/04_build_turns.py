@@ -248,7 +248,11 @@ def main():
                     help="worker processes (default: all cores)")
     args = ap.parse_args()
 
-    rows = load_manifest(args.ids, args.limit)
+    rows = load_manifest(args.ids)
+    if not args.overwrite:
+        rows = [r for r in rows if not (C.TURNS / f"{r['file_id']}.jsonl").exists()]
+    if args.limit:
+        rows = rows[:args.limit]
     print(f"files: {len(rows)}", flush=True)
     ok = 0
     for i, total, row, status, payload in run_rows(

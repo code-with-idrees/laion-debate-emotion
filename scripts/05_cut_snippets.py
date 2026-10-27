@@ -96,7 +96,11 @@ def main():
                     help="worker processes (default: all cores)")
     args = ap.parse_args()
 
-    rows = load_manifest(args.ids, args.limit)
+    rows = load_manifest(args.ids)
+    if not args.overwrite:
+        rows = [r for r in rows if not (C.SNIPPETS / f"{r['file_id']}.index.jsonl").exists()]
+    if args.limit:
+        rows = rows[:args.limit]
     print(f"files: {len(rows)}", flush=True)
     for i, total, row, status, payload in run_rows(
             rows, cut_file, args.jobs, args.overwrite):

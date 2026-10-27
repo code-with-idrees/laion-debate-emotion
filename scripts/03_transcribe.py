@@ -57,8 +57,10 @@ def main():
     args = ap.parse_args()
     cpu_threads = args.cpu_threads or (os.cpu_count() or 4)
 
-    rows = load_manifest(args.ids, args.limit)
+    rows = load_manifest(args.ids)
     rows = [r for r in rows if args.overwrite or not valid(C.TRANSCRIPTS / f"{r['file_id']}.json")]
+    if args.limit:
+        rows = rows[:args.limit]
     print(f"to transcribe: {len(rows)}")
     if not rows:
         return
