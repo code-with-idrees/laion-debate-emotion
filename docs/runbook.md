@@ -87,6 +87,11 @@ already exists and is complete. `--overwrite` forces a redo of one stage.
   read timeout; stalled blocks retry, completed blocks are checkpointed in
   `*.blocks.json`. Restarting the same command resumes. Changing `--block-mb`
   discards the checkpoint (the partial file stays valid).
+- **Missing transcript** — 11 recordings in the published `transcribe.jsonl` have
+  an empty word list and 2 have no record at all; 04 writes
+  `outputs/turns/<id>.skip.json` and the driver stops waiting for them. Recover
+  those specific ids with the Whisper fallback:
+  `python scripts\run_pipeline.py --whisper-asr --stages transcribe turns snippets --ids <id> ...`
 - **CUDA OOM** — the scoring harness halves the batch and retries down to a
   single snippet; persistent OOM means lower `--batch-size`.
 - **Bad recording** — a file-level exception writes
