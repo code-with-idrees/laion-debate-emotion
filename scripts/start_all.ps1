@@ -58,4 +58,9 @@ if (Get-Running '*00_download_models*') {
 Start-Sleep 5
 Write-Output ''
 python scripts\manifest_ok.py --verbose
-Write-Output 'tail logs\dl_dataset.log to follow progress'
+Write-Output ''
+Write-Output 'Watch it (Ctrl-C stops the display, not the download):'
+Write-Output ('  cd ' + (Get-Location).Path)
+Write-Output '  python scripts\progress.py'
+Write-Output 'or double-click scripts\progress.cmd'
+Write-Output 'Logs: logs\dl_dataset.log, logs\live_pipeline.log, logs\dl_weights.log'
