@@ -48,7 +48,14 @@ def total_gb() -> float:
 
 
 def done_bytes(audio: Path | None = None) -> int:
-    """Finished WAVs plus the blocks already fetched for in-flight files."""
+    """Finished WAVs plus the bytes already fetched for in-flight files.
+
+    A file's blocks.json counts only until its WAV exists (the checkpoint is
+    deleted on completion, but the two can briefly overlap), and the last block
+    of a file is usually partial: counting ``len(done) * block`` overstates it,
+    which made the total *drop* when a file completed and the rolling rate read
+    0.00 MB/s while the download was actually moving at 7 MB/s.
+    """
     audio = audio or C.AUDIO
     total = 0
     for p in audio.glob("*.wav"):
@@ -56,12 +63,19 @@ def done_bytes(audio: Path | None = None) -> int:
             total += p.stat().st_size
         except OSError:
             pass
-    for p in audio.glob("*.blocks.json"):
+    for p in audio.glob("*.wav.blocks.json"):
+        base = p.name[: -len(".blocks.json")]
+        if (audio / base).exists():
+            continue  # finished; the WAV already counts it
+        part = audio / (base + ".part")
         try:
+            size = part.stat().st_size
             st = json.loads(p.read_text())
-            total += len(st.get("done", [])) * int(st.get("block", 1))
         except Exception:
-            pass
+            continue
+        block = int(st.get("block", 0)) or 1
+        for i in st.get("done", []):
+            total += min(block, max(0, size - int(i) * block))
     return total
 
 
@@ -93,7 +107,7 @@ def human(seconds: float) -> str:
 
 
 def frame(got: int, total_bytes: float, rate: float, have: int,
-          sizes: dict[str, int]) -> list[str]:
+          sizes: dict[str, int], window: int = WINDOW_S) -> list[str]:
     remaining = max(0.0, total_bytes - got)
     eta = remaining / rate if rate > 0 else float("nan")
     diar = sum(1 for _ in C.DIAR.glob("*.json"))
@@ -103,7 +117,7 @@ def frame(got: int, total_bytes: float, rate: float, have: int,
         f"download    [{bar(have / C.DATASET_N_FILES)}] {have:5d}/{C.DATASET_N_FILES} files   "
         f"{got / 1e9:7.2f}/{total_bytes / 1e9:.1f} GB "
         f"({100 * got / total_bytes:5.2f}%)",
-        f"speed       {rate / 1e6:5.2f} MB/s (last {WINDOW_S}s)   "
+        f"speed       {rate / 1e6:5.2f} MB/s (last {window}s)   "
         f"ETA {human(eta)}   errors {sizes.get('error', 0)}",
         f"pipeline    diarized {diar:5d}   snippets {snippets:7,d}",
         f"updated     {time.strftime('%H:%M:%S')}   Ctrl-C stops watching, "
@@ -120,9 +134,19 @@ def main() -> int:
     total_bytes = total_gb() * 1e9
     window: deque[tuple[float, int]] = deque()
     frames = 0
-    if not args.once:
-        enable_ansi()
-        print("\033[2J", end="")
+    if args.once:
+        # A single read cannot show a speed: sample 5 s so a snapshot in a log
+        # says whether the pull is actually moving.
+        before, t0 = done_bytes(), time.time()
+        time.sleep(5.0)
+        got = done_bytes()
+        rate = (got - before) / max(time.time() - t0, 1e-6)
+        sizes = manifest()
+        print("\n".join(frame(got, total_bytes, rate, sizes.get("ok", 0),
+                             sizes, window=5)))
+        return 0
+    enable_ansi()
+    print("\033[2J", end="")
 
     while True:
         now = time.time()
@@ -136,9 +160,6 @@ def main() -> int:
         have = sizes.get("ok", 0)
         lines = frame(got, total_bytes, rate, have, sizes)
 
-        if args.once:
-            print("\n".join(lines))
-            return 0
         print("\033[H" + "\n".join(line + "\033[K" for line in lines), end="",
               flush=True)
         frames += 1

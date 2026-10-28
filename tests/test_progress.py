@@ -41,14 +41,32 @@ class TestDoneBytes(unittest.TestCase):
             d = Path(tmp)
             (d / "a.wav").write_bytes(b"\0" * 1000)
             (d / "b.wav.part").write_bytes(b"\0" * 999999)  # preallocated
-            (d / "b.blocks.json").write_text(json.dumps(
+            (d / "b.wav.blocks.json").write_text(json.dumps(
                 {"block": 400, "done": [0, 1]}))
             self.assertEqual(progress.done_bytes(d), 1000 + 800)
+
+    def test_last_block_is_clamped_to_file_size(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / "b.wav.part").write_bytes(b"\0" * 950)  # 400 + 400 + 150
+            (d / "b.wav.blocks.json").write_text(json.dumps(
+                {"block": 400, "done": [0, 1, 2]}))
+            # Not 3 * 400: the file is only 950 bytes long.
+            self.assertEqual(progress.done_bytes(d), 950)
+
+    def test_completed_file_is_not_counted_twice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / "b.wav").write_bytes(b"\0" * 800)
+            (d / "b.wav.blocks.json").write_text(json.dumps(
+                {"block": 400, "done": [0, 1]}))
+            self.assertEqual(progress.done_bytes(d), 800)
 
     def test_ignores_corrupt_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp)
-            (d / "c.blocks.json").write_text("{not json")
+            (d / "c.wav.blocks.json").write_text("{not json")
+            (d / "c.wav.part").write_bytes(b"\0" * 400)
             self.assertEqual(progress.done_bytes(d), 0)
 
 
