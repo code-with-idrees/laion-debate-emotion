@@ -20,9 +20,10 @@ from pathlib import Path
 import config as C
 
 WINDOW_S = 90
-# A checkpoint only advances when a 16 MB block finishes, so a 5 s sample often
-# sees no change at 3 MB/s and prints 0.00. One-shot snapshots sample longer.
-ONCE_WINDOW_S = 20
+# A checkpoint only advances when a 16 MB block finishes, so a short sample can
+# legitimately see nothing. One-shot snapshots wait for two blocks or 60 s.
+ONCE_MIN_BYTES = 32 * 1024 * 1024
+ONCE_MAX_S = 60
 
 
 def enable_ansi() -> None:
@@ -138,15 +139,22 @@ def main() -> int:
     window: deque[tuple[float, int]] = deque()
     frames = 0
     if args.once:
-        # A single read cannot show a speed: sample 5 s so a snapshot in a log
-        # says whether the pull is actually moving.
+        # A checkpoint only advances when a 16 MB block completes, and with ~12
+        # files in flight the completions arrive in bursts. Sample until at
+        # least two blocks landed (a real rate) or the budget runs out, instead
+        # of printing 0.00 MB/s for a healthy download.
         before, t0 = done_bytes(), time.time()
-        time.sleep(float(ONCE_WINDOW_S))
-        got = done_bytes()
-        rate = (got - before) / max(time.time() - t0, 1e-6)
+        got = before
+        while time.time() - t0 < ONCE_MAX_S:
+            time.sleep(2.0)
+            got = done_bytes()
+            if got - before >= ONCE_MIN_BYTES:
+                break
+        span = max(time.time() - t0, 1e-6)
+        rate = (got - before) / span
         sizes = manifest()
         print("\n".join(frame(got, total_bytes, rate, sizes.get("ok", 0),
-                             sizes, window=ONCE_WINDOW_S)))
+                             sizes, window=int(round(span)))))
         return 0
     enable_ansi()
     print("\033[2J", end="")
