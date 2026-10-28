@@ -20,6 +20,9 @@ from pathlib import Path
 import config as C
 
 WINDOW_S = 90
+# A checkpoint only advances when a 16 MB block finishes, so a 5 s sample often
+# sees no change at 3 MB/s and prints 0.00. One-shot snapshots sample longer.
+ONCE_WINDOW_S = 20
 
 
 def enable_ansi() -> None:
@@ -138,12 +141,12 @@ def main() -> int:
         # A single read cannot show a speed: sample 5 s so a snapshot in a log
         # says whether the pull is actually moving.
         before, t0 = done_bytes(), time.time()
-        time.sleep(5.0)
+        time.sleep(float(ONCE_WINDOW_S))
         got = done_bytes()
         rate = (got - before) / max(time.time() - t0, 1e-6)
         sizes = manifest()
         print("\n".join(frame(got, total_bytes, rate, sizes.get("ok", 0),
-                             sizes, window=5)))
+                             sizes, window=ONCE_WINDOW_S)))
         return 0
     enable_ansi()
     print("\033[2J", end="")
