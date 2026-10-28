@@ -49,7 +49,7 @@ cd D:\LAION_Debate_Emotion
 python scripts\progress.py
 ```
 
-`python scripts\progress.py --once` prints one snapshot (sampled over 5 s, so it
+`python scripts\progress.py --once` prints one snapshot (sampled over 20 s, so it
 reports a real speed) and `scripts\progress.cmd` does the `cd` for you and can be
 double-clicked. Everything is stored under `D:\LAION_Debate_Emotion`; the paths
 come from the repository location, so another working directory changes nothing.
