@@ -77,7 +77,7 @@ fits more headroom for a larger batch; the embedding stays 3584-d.
 ```powershell
 cd D:\LAION_Debate_Emotion
 python scripts\progress.py                      # live dashboard, 1 Hz
-python scripts\progress.py --once               # one snapshot, 20 s sample
+python scripts\progress.py --once               # one snapshot, waits for 2 blocks
 python scripts\progress.cmd                     # same, from any folder
 python scripts\status.py                        # per-stage counts
 python scripts\preflight.py                     # stack/disk/weights/access
