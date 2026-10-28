@@ -34,6 +34,26 @@ python scripts\run_pipeline.py --from diarize
 python scripts\status.py
 ```
 
+Start every long-running job at once (download supervisor, live pipeline,
+weights) — safe to re-run, it skips what is already alive:
+
+```powershell
+cd D:\LAION_Debate_Emotion
+powershell -ExecutionPolicy Bypass -File scripts\start_all.ps1
+```
+
+Watch it live; Ctrl-C stops the display, not the download:
+
+```powershell
+cd D:\LAION_Debate_Emotion
+python scripts\progress.py
+```
+
+`python scripts\progress.py --once` prints one snapshot (sampled over 5 s, so it
+reports a real speed) and `scripts\progress.cmd` does the `cd` for you and can be
+double-clicked. Everything is stored under `D:\LAION_Debate_Emotion`; the paths
+come from the repository location, so another working directory changes nothing.
+
 Smoke test on a subset:
 
 ```powershell

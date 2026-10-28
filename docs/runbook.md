@@ -75,11 +75,22 @@ fits more headroom for a larger batch; the embedding stays 3584-d.
 ## Monitoring
 
 ```powershell
+cd D:\LAION_Debate_Emotion
+python scripts\progress.py                      # live dashboard, 1 Hz
+python scripts\progress.py --once               # one snapshot, 5 s sample
+python scripts\progress.cmd                     # same, from any folder
 python scripts\status.py                        # per-stage counts
 python scripts\preflight.py                     # stack/disk/weights/access
-Get-Content logs\dl_weights.log -Tail 20        # download rate
-Get-Content logs\pipeline.log -Tail 50          # stage output
+Get-Content logs\dl_dataset.log -Tail 20        # download pass output
+Get-Content logs\dl_weights.log -Tail 20        # weight download rate
+Get-Content logs\live_pipeline.log -Tail 50     # diarize/turns/snippets
 ```
+
+`progress.py` draws files, GB and percent, a rolling 90 s rate, ETA and errors,
+plus how many recordings are diarized and how many snippets are cut. Byte counts
+come from the block checkpoints (with the last block clamped to the real file
+size) plus finished WAVs, because `.part` files are preallocated and their length
+says nothing. Ctrl-C only stops the display.
 
 `run_pipeline.py` prints to the console; start it with a redirection if you want
 a file to tail:
