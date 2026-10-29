@@ -107,9 +107,12 @@ already exists and is complete. `--overwrite` forces a redo of one stage.
 - **Gated 403** — request access on the dataset page; stage 01 exits with
   `ACCESS DENIED` rather than retrying.
 - **Download stall** — each block is an independent Range request with a 30 s
-  read timeout; stalled blocks retry, completed blocks are checkpointed in
-  `*.blocks.json`. Restarting the same command resumes. Changing `--block-mb`
-  discards the checkpoint (the partial file stays valid).
+  read timeout and a 180 s wall-clock budget; stalled blocks retry, completed
+  blocks are checkpointed in `*.blocks.json`. Restarting the same command
+  resumes. Changing `--block-mb` discards the checkpoint (the partial file stays
+  valid). If *no* byte arrives for `--stall-timeout` (default 900 s) the process
+  exits with code 3 and the supervisor starts a fresh pass, because a hung
+  socket otherwise leaves the process alive and the supervisor blind.
 - **Missing transcript** — 11 recordings in the published `transcribe.jsonl` have
   an empty word list and 2 have no record at all; 04 writes
   `outputs/turns/<id>.skip.json` and the driver stops waiting for them. Recover
