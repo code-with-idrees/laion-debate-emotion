@@ -110,19 +110,46 @@ def human(seconds: float) -> str:
     return f"{d}d {h:02d}h {m:02d}m" if d else f"{h:02d}h {m:02d}m"
 
 
+def log_idle_minutes(log: Path | None = None) -> float | None:
+    """Minutes since the downloader last saw a byte, from its own log.
+
+    The dashboard can only see finished 16 MB blocks, so on a degraded link it
+    shows 0.00 MB/s while the downloader is happily (if slowly) transferring.
+    The downloader knows better: it appends ', idle N min' once it has been
+    quiet for a minute.
+    """
+    log = log or (C.LOGS / "dl_dataset.log")
+    try:
+        lines = log.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines[-60:]):
+        if "idle " in line and " min" in line:
+            try:
+                return float(line.split("idle ", 1)[1].split(" min", 1)[0])
+            except (ValueError, IndexError):
+                return None
+    return None
+
+
 def frame(got: int, total_bytes: float, rate: float, have: int,
           sizes: dict[str, int], window: int = WINDOW_S) -> list[str]:
     remaining = max(0.0, total_bytes - got)
     eta = remaining / rate if rate > 0 else float("nan")
     diar = sum(1 for _ in C.DIAR.glob("*.json"))
     snippets = sum(1 for _ in C.SNIPPETS.glob("*/*.flac"))
+    note = ""
+    if rate <= 0:
+        idle = log_idle_minutes()
+        note = (f"   link idle {idle:.0f} min" if idle is not None
+                else "   (waiting for the next 16 MB block)")
     return [
         f"corpus      {C.AUDIO}",
         f"download    [{bar(have / C.DATASET_N_FILES)}] {have:5d}/{C.DATASET_N_FILES} files   "
         f"{got / 1e9:7.2f}/{total_bytes / 1e9:.1f} GB "
         f"({100 * got / total_bytes:5.2f}%)",
         f"speed       {rate / 1e6:5.2f} MB/s (last {window}s)   "
-        f"ETA {human(eta)}   errors {sizes.get('error', 0)}",
+        f"ETA {human(eta)}   errors {sizes.get('error', 0)}{note}",
         f"pipeline    diarized {diar:5d}   snippets {snippets:7,d}",
         f"updated     {time.strftime('%H:%M:%S')}   Ctrl-C stops watching, "
         f"not the download",

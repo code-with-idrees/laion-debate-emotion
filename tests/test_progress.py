@@ -79,5 +79,30 @@ class TestManifest(unittest.TestCase):
         self.assertEqual((c["ok"], c["error"], c["total"]), (2, 1, 3))
 
 
+class TestLogIdle(unittest.TestCase):
+    def _log(self, text: str) -> Path:
+        tmp = tempfile.NamedTemporaryFile("w", suffix=".log", delete=False,
+                                          encoding="utf-8")
+        tmp.write(text)
+        tmp.close()
+        self.addCleanup(lambda: Path(tmp.name).unlink(missing_ok=True))
+        return Path(tmp.name)
+
+    def test_reads_last_idle_value(self):
+        p = self._log("[x] ... 4/2312 files, 0.49 GB done (0.52 GB fetched, "
+                      "2.89 MB/s avg)\n"
+                      "[x] ... 4/2312 files, 0.49 GB done (0.53 GB fetched, "
+                      "2.10 MB/s avg, idle 7 min)\n")
+        self.assertEqual(progress.log_idle_minutes(p), 7.0)
+
+    def test_none_when_no_idle_yet(self):
+        p = self._log("[x] ... 4/2312 files, 0.49 GB done (0.52 GB fetched, "
+                      "2.89 MB/s avg)\n")
+        self.assertIsNone(progress.log_idle_minutes(p))
+
+    def test_missing_log(self):
+        self.assertIsNone(progress.log_idle_minutes(Path("nope.log")))
+
+
 if __name__ == "__main__":
     unittest.main()
