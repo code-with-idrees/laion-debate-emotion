@@ -51,7 +51,15 @@ python scripts\progress.py
 
 `python scripts\progress.py --once` prints one snapshot (it samples until two
 16 MB blocks have landed, so the speed is real; at most 60 s) and
-`scripts\progress.cmd` does the `cd` for you and can be double-clicked. Everything is stored under `D:\LAION_Debate_Emotion`; the paths
+`scripts\progress.cmd` does the `cd` for you and can be double-clicked.
+
+To make the whole run restart itself at logon (per-user Startup shortcut, no
+administrator rights required):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install_autostart.ps1
+powershell -ExecutionPolicy Bypass -File scripts\install_autostart.ps1 -Remove
+``` Everything is stored under `D:\LAION_Debate_Emotion`; the paths
 come from the repository location, so another working directory changes nothing.
 
 Smoke test on a subset:

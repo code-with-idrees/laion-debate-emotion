@@ -128,8 +128,19 @@ already exists and is complete. `--overwrite` forces a redo of one stage.
 ## Restarting after a crash
 
 ```powershell
-python scripts\status.py                 # find the first incomplete stage
-python scripts\run_pipeline.py --from snippets
+cd D:\LAION_Debate_Emotion
+powershell -ExecutionPolicy Bypass -File scripts\start_all.ps1
+python scripts\progress.py --once
+```
+
+`start_all.ps1` starts whatever died and reports what is still alive. Every stage
+resumes from its checkpoints, so nothing is downloaded or scored twice.
+
+To make that happen on its own at every logon (no administrator rights needed):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install_autostart.ps1   # adds a Startup shortcut
+powershell -ExecutionPolicy Bypass -File scripts\install_autostart.ps1 -Remove
 ```
 
 Individual stages accept `--ids <file_id>` (or `--limit N`) for debugging, e.g.
