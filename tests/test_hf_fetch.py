@@ -157,5 +157,37 @@ class TestDownload(unittest.TestCase):
             "https://huggingface.co/datasets/org/ds/resolve/main/x.wav?download=true")
 
 
+class FakeResponse:
+    """Just enough of a requests response for _read_block."""
+
+    def __init__(self, pieces):
+        self.pieces = pieces
+        self.closed = False
+
+    def iter_content(self, chunk_size=0):
+        for p in self.pieces:
+            yield p
+
+    def close(self):
+        self.closed = True
+
+
+class TestReadBlock(unittest.TestCase):
+    def test_reads_until_want(self):
+        d = hf_fetch.Downloader(token="x")
+        r = FakeResponse([b"a" * 10, b"b" * 6, b"c" * 100])
+        self.assertEqual(d._read_block(r, 16), b"a" * 10 + b"b" * 6)
+
+    def test_short_body_is_returned_as_is(self):
+        d = hf_fetch.Downloader(token="x")
+        self.assertEqual(d._read_block(FakeResponse([b"a" * 4]), 16), b"a" * 4)
+
+    def test_trickling_block_trips_the_deadline(self):
+        """A byte at a time never trips the socket timeout, only the deadline."""
+        d = hf_fetch.Downloader(token="x", block_deadline=0)
+        with self.assertRaises(RuntimeError):
+            d._read_block(FakeResponse([b"a"] * 8), 16)
+
+
 if __name__ == "__main__":
     unittest.main()

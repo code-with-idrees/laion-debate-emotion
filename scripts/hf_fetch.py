@@ -25,12 +25,17 @@ USER_AGENT = "laion-debate-emotion-pipeline/1.0"
 
 class Downloader:
     def __init__(self, token: str | None, block_mb: int = BLOCK_MB,
-                 chunk_threads: int = 4, timeout: int = 30, retries: int = 6):
+                 chunk_threads: int = 4, timeout: int = 30, retries: int = 6,
+                 block_deadline: int = 180):
         self.token = token or ""
         self.block = int(block_mb * 1024 * 1024)
         self.chunk_threads = chunk_threads
         self.timeout = timeout
         self.retries = retries
+        # Wall-clock cap for one 16 MB block. The socket timeout only catches a
+        # gap between reads, so a server that trickles a byte every 29 s holds a
+        # block (and its file) forever without ever tripping it.
+        self.block_deadline = block_deadline
         self._local = threading.local()
         self.done_bytes = 0
         self.done_lock = threading.Lock()
@@ -52,11 +57,27 @@ class Downloader:
         return f"{BASE}/{prefix}{repo}/resolve/main/{path}?download=true"
 
     # ------------------------------------------------------------------ #
+    def _read_block(self, r, want: int) -> bytes:
+        """Read a block body, giving up if it trickles past the deadline."""
+        deadline = time.time() + self.block_deadline
+        buf = bytearray()
+        for piece in r.iter_content(chunk_size=512 * 1024):
+            if piece:
+                buf.extend(piece)
+                if len(buf) >= want:
+                    break
+            if time.time() > deadline:
+                raise RuntimeError(
+                    f"block stalled: {len(buf)}/{want} bytes in "
+                    f"{self.block_deadline}s")
+        return bytes(buf)
+
     def _fetch_block(self, repo: str, path: str, part: Path, start: int,
                      end: int, repo_type: str = "model"):
         """Download [start, end] inclusive into part at the right offset."""
         want = end - start + 1
         for attempt in range(self.retries):
+            r = None
             try:
                 r = self._session().get(
                     self._url(repo, path, repo_type),
@@ -70,12 +91,7 @@ class Downloader:
                     raise RuntimeError(f"HTTP {r.status_code}")
                 if r.status_code == 416:
                     return True  # already satisfied
-                buf = bytearray()
-                for piece in r.iter_content(chunk_size=512 * 1024):
-                    if piece:
-                        buf.extend(piece)
-                        if len(buf) > want:
-                            break
+                buf = self._read_block(r, want)
                 if len(buf) != want:
                     raise RuntimeError(f"short block {len(buf)}/{want}")
                 with open(part, "r+b") as fh:
@@ -88,6 +104,9 @@ class Downloader:
                 if attempt == self.retries - 1:
                     return False
                 time.sleep(min(30, 2 * (attempt + 1)))
+            finally:
+                if r is not None:
+                    r.close()
         return False
 
     # ------------------------------------------------------------------ #
