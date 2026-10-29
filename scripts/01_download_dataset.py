@@ -105,6 +105,9 @@ def main():
     ap.add_argument("--ids", nargs="*", default=None)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--stall-timeout", type=int, default=900,
+                    help="restart the pass when no byte arrives for N seconds "
+                         "(0 disables); checkpoints keep what was fetched")
     args = ap.parse_args()
 
     api = HfApi(token=os.environ.get("HF_TOKEN"))
@@ -174,6 +177,10 @@ def main():
     stop = threading.Event()
 
     def monitor():
+        # A hung socket keeps the pool alive forever: threads wait, no file
+        # finishes, and the supervisor cannot help because the process is still
+        # running. Watch the byte counter and restart the pass when it freezes.
+        watch = {"bytes": 0.0, "at": time.time()}
         while not stop.wait(30):
             with lock:
                 done = counter["ok"] + counter["fail"]
@@ -181,9 +188,22 @@ def main():
             # Files only count when they finish; in-flight block progress keeps
             # the rate honest for 150 MB recordings.
             live = gb + ((dl.done_bytes if dl else 0) / 1e9)
+            if live > watch["bytes"] + 1e-9:
+                watch["bytes"] = live
+                watch["at"] = time.time()
+            idle = time.time() - watch["at"]
             rate = live * 1e9 / max(time.time() - t0, 1e-6) / 1e6
+            tail = f", idle {idle / 60:.0f} min" if idle >= 60 else ""
             print(f"    ... {done}/{len(pending)} files, {gb:.2f} GB done "
-                  f"({live:.2f} GB in flight, {rate:.2f} MB/s)", flush=True)
+                  f"({live:.2f} GB fetched, {rate:.2f} MB/s avg{tail})",
+                  flush=True)
+            if args.stall_timeout and idle > args.stall_timeout:
+                print(f"STALL: no bytes for {idle / 60:.0f} min - restarting "
+                      f"the pass; block checkpoints keep everything fetched",
+                      flush=True)
+                # os._exit: the worker threads are stuck in the dead sockets and
+                # a normal shutdown would wait for them.
+                os._exit(3)
 
     def one(f):
         ts = time.time()
