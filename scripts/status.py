@@ -1,6 +1,7 @@
 """status.py - progress report for every pipeline stage."""
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import sys
@@ -49,15 +50,22 @@ def bar(done: int, total: int, width: int = 24) -> str:
 
 
 def main():
+    ap = argparse.ArgumentParser(description="progress report per pipeline stage")
+    ap.add_argument("--only", default=None,
+                    help="comma-separated stages to show (e.g. snippets,voiceclap)")
+    args = ap.parse_args()
+    only = {s.strip() for s in args.only.split(",")} if args.only else None
+
     ok, all_rows = manifest_ids()
     n = len(ok)
     ids = {r["file_id"] for r in ok}
-    print(f"root        {C.ROOT}")
-    print(f"dataset     {C.DATASET_REPO}")
-    print(f"manifest    {len(all_rows)} rows, {n} usable")
-    if all_rows:
-        errs = [r for r in all_rows if r.get("status") == "error"]
-        print(f"errors      {len(errs)}")
+    if not only:
+        print(f"root        {C.ROOT}")
+        print(f"dataset     {C.DATASET_REPO}")
+        print(f"manifest    {len(all_rows)} rows, {n} usable")
+        if all_rows:
+            errs = [r for r in all_rows if r.get("status") == "error"]
+            print(f"errors      {len(errs)}")
 
     stages = [
         ("diarization", C.DIAR, "*.json", ".json"),
@@ -69,17 +77,24 @@ def main():
         ("voiceclap", C.SCORES, "*.voiceclap.jsonl", ".voiceclap.jsonl"),
     ]
     for name, d, pat, suffix in stages:
+        if only and name not in only:
+            continue
         c = count_for_ids(d, pat, ids, suffix)
         pct = f"{min(100.0, 100 * c / n):5.1f}%" if n else "  n/a"
         print(f"{name:12s} {c:6d}/{n:<6d} {pct} [{bar(c, n)}] {dir_size_gb(d):8.2f} GB")
 
-    skipped = count_files(C.TURNS, "*.skip.json")
-    if skipped:
-        print(f"{'skipped':12s} {skipped:6d} recordings with no usable transcript")
+    if not only or "skipped" in only:
+        skipped = count_files(C.TURNS, "*.skip.json")
+        if skipped:
+            print(f"{'skipped':12s} {skipped:6d} recordings with no usable transcript")
 
-    emb = C.EMBEDDINGS / "voiceclap"
-    ne = count_for_ids(emb, "*.npy", ids, ".npy")
-    print(f"{'embeddings':12s} {ne:6d}/{n:<6d}       [{bar(ne, n)}] {dir_size_gb(emb):8.2f} GB")
+    if not only or "embeddings" in only:
+        emb = C.EMBEDDINGS / "voiceclap"
+        ne = count_for_ids(emb, "*.npy", ids, ".npy")
+        print(f"{'embeddings':12s} {ne:6d}/{n:<6d}       [{bar(ne, n)}] {dir_size_gb(emb):8.2f} GB")
+
+    if only:
+        return
 
     pq_file = C.DATASET / "data" / "train-00000-of-00001.parquet"
     if pq_file.exists():
