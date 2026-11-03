@@ -105,6 +105,27 @@ def make_batches(items, max_batch: int, max_seconds: float):
         yield cur
 
 
+BAD_SNIPPETS_LOG = None  # resolved lazily; overridable in tests
+
+
+def log_bad_snippet(path, exc):
+    """Record a snippet that cannot be read, so one bad file cannot stall a stage.
+
+    A shutdown mid-write can leave a FLAC whose header promises more frames than
+    the file holds; the decoder then asks for an impossible allocation. Dropping
+    the whole batch on the floor would lose good segments with it, so the bad
+    one is logged and the rest of the file still gets scored.
+    """
+    global BAD_SNIPPETS_LOG
+    log = BAD_SNIPPETS_LOG or (C.LOGS / "bad_snippets.log")
+    try:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with log.open("a", encoding="utf-8") as fh:
+            fh.write(f"{path}\t{type(exc).__name__}: {exc}\n")
+    except OSError:
+        pass
+
+
 def score_with_retry(score_batch, items, depth: int = 0):
     """Call score_batch(items); on CUDA OOM split the batch in half and retry."""
     import torch  # imported lazily so the module loads without a GPU stack
@@ -121,6 +142,20 @@ def score_with_retry(score_batch, items, depth: int = 0):
         left = score_with_retry(score_batch, items[:mid], depth + 1)
         right = score_with_retry(score_batch, items[mid:], depth + 1)
         return left + right
+    except Exception as exc:
+        # A decoder error is usually one damaged snippet, not the whole batch:
+        # halve until the offender is isolated, then record it and move on.
+        if len(items) > 1 and depth <= 6:
+            mid = len(items) // 2
+            print(f"    batch error ({type(exc).__name__}) at {len(items)} "
+                  f"-> retry as {mid}+{len(items)-mid}", flush=True)
+            left = score_with_retry(score_batch, items[:mid], depth + 1)
+            right = score_with_retry(score_batch, items[mid:], depth + 1)
+            return left + right
+        log_bad_snippet(items[0].get("path"), exc)
+        print(f"    SKIP unreadable snippet {items[0].get('path')}: "
+              f"{type(exc).__name__}: {exc}", flush=True)
+        return [{"error": f"{type(exc).__name__}: {exc}"}]
 
 
 # --------------------------------------------------------------------------- #
