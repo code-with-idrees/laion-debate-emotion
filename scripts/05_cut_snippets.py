@@ -37,13 +37,15 @@ def load_manifest(ids=None, limit=0):
 
 def cut_file(row, overwrite=False):
     fid = row["file_id"]
-    turns_path = C.TURNS / f"{fid}.jsonl"
-    if not turns_path.exists():
-        return {"file_id": fid, "status": "missing_turns"}
     outdir = C.SNIPPETS / fid
     index_path = C.SNIPPETS / f"{fid}.index.jsonl"
     if index_path.exists() and not overwrite:
         return None
+    turns_path = C.TURNS / f"{fid}.jsonl"
+    if not turns_path.exists():
+        if (C.TURNS / f"{fid}.skip.json").exists():
+            return None  # marked unusable: treat as done, never as pending
+        return {"file_id": fid, "status": "missing_turns"}
     outdir.mkdir(parents=True, exist_ok=True)
 
     audio_path = Path(row.get("path") or C.AUDIO / f"{fid}.wav")
@@ -98,7 +100,12 @@ def main():
 
     rows = load_manifest(args.ids)
     if not args.overwrite:
-        rows = [r for r in rows if not (C.SNIPPETS / f"{r['file_id']}.index.jsonl").exists()]
+        # Filter *before* the limit: slicing the manifest first re-examines
+        # finished recordings and the pending count never falls, which left the
+        # snippet stage stuck at 585 while 04 kept producing turns.
+        rows = [r for r in rows
+                if not (C.SNIPPETS / f"{r['file_id']}.index.jsonl").exists()
+                and not (C.TURNS / f"{r['file_id']}.skip.json").exists()]
     if args.limit:
         rows = rows[:args.limit]
     print(f"files: {len(rows)}", flush=True)
