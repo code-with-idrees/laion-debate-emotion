@@ -60,8 +60,17 @@ class EmpathicScorer:
         bude_dir = Path(bude_dir or C.BUDE_DIR)
 
         self.fe = WhisperFeatureExtractor.from_pretrained(str(bude_dir))
+        # The encoder must run in the same dtype as the features we feed it.
+        # Loading it in float32 while casting features to float16 raises
+        # "Input type (Half) and bias type (float) should be the same"; bf16 is
+        # preferred where available because it keeps float32's dynamic range.
+        if device.startswith("cuda") and torch.cuda.is_bf16_supported():
+            self.enc_dtype = torch.bfloat16
+        else:
+            self.enc_dtype = torch.float32
         whisper = WhisperModel.from_pretrained(str(bude_dir), low_cpu_mem_usage=True)
-        self.encoder = whisper.get_encoder().to(device).eval()
+        self.encoder = whisper.get_encoder().to(
+            device=device, dtype=self.enc_dtype).eval()
         del whisper
         gc.collect()
         torch.cuda.empty_cache()
@@ -129,7 +138,7 @@ class EmpathicScorer:
     def score_batch(self, paths: list[str | Path]) -> list[dict]:
         wavs = [self.load_audio(p) for p in paths]
         inputs = self.fe(wavs, sampling_rate=C.SR, return_tensors="pt")
-        feats = inputs.input_features.to(self.device, dtype=self.dtype)
+        feats = inputs.input_features.to(self.device, dtype=self.enc_dtype)
         emb = self.encoder(feats).last_hidden_state  # [B,1500,768]
         flat = emb.reshape(emb.shape[0], -1).float()  # [B,1152000]
         flat16 = flat.half()
