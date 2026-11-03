@@ -1,0 +1,57 @@
+# Build progress
+
+A dated snapshot of the dataset build, so the numbers at any point can be read
+without having to ask someone to run `status.py`. Regenerate the live numbers
+with `python scripts\status.py` (or `scripts\stages.cmd`).
+
+## 2026-11-03 23:30
+
+### Corpus
+
+| | |
+|---|---|
+| recordings in repo | 2,890 |
+| downloaded | **2,890 / 2,890 (100%)** |
+| bytes on disk | 436.43 / 436.42 GB |
+| download errors | **0** |
+| in-flight `.part` files | 0 |
+
+The ranged downloader is checkpointed per 16 MB block, so a crash, a stall or a
+power cut resumes instead of restarting. Throughput was limited by a 10 Mbps
+Ethernet link (the adapter is a 2.5 GbE part that negotiated down), which is why
+the pull took days rather than hours; see `runbook.md`.
+
+### Derived audio
+
+| stage | done | note |
+|---|---|---|
+| Nemotron 3 diarization | **2,890 / 2,890 (100%)** | 569–724× RTFx |
+| corpus transcripts loaded | 2,877 / 2,890 (99.6%) | the corpus' own `transcribe.jsonl`; **no re-transcription** |
+| speaker turns | 2,350 usable | 540 recordings have no usable transcript and are skip-marked |
+| snippets cut | 2,350 files, **250,675 snippets** | 16 kHz mono FLAC, 62.7 GB |
+
+2,350 + 540 = 2,890, so the audio side is complete: every recording is either
+cut per speaker turn or deliberately skip-marked.
+
+### Model scores
+
+| model | scored | of 2,350 usable |
+|---|---|---|
+| VoiceNet (57 reg + 57 cls) | 1,459 | 62% |
+| Empathic-Insight-Voice-Plus (55 emotion + 4 quality) | 918 | 39% |
+| VoiceCLAP-large-v2 (3584-d embedding + top-5) | 918 | 39% |
+
+Scoring runs on one RTX 3090 through `scripts/run_scores.ps1`, which chains the
+three stages rather than starting them together (24 GB would not hold all
+three), drains every snippet that exists, and loops as new ones are cut.
+
+### Notes on data integrity
+
+- `diarization_example.wav` is a test fixture. It leaked into the corpus manifest
+  and was carried through diarisation, cutting and scoring; its row is now marked
+  `example` so it is excluded from counts and from the assembled dataset.
+- Two shutdowns interrupted the build. A FLAC truncated mid-write used to abort
+  the whole scoring stage on every restart; a damaged snippet is now isolated,
+  logged to `logs/bad_snippets.log`, and skipped.
+- `scripts/start_all.ps1` restarts all four jobs after a reboot (corpus pull,
+  live pipeline, weights, scoring) and is invoked by a Startup shortcut.
