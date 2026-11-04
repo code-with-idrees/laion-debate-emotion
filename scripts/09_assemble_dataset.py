@@ -295,14 +295,17 @@ size_categories:
 
 # Sleeping Debate: speaker-turn emotion & voice-attribute enrichment
 
-Re-transcription, re-diarization and per-turn voice-model scoring of
+Re-diarization and per-turn voice-model scoring of
 [`{stats['dataset']}`](https://huggingface.co/datasets/{stats['dataset']}).
 
 ## Pipeline
 
 1. **Diarization** - NVIDIA Nemotron 3 Diarization (`nvidia/Nemotron-3-Diarization`),
    offline chunked mode (27.2 s scored + 3.2 s right context, speaker cache).
-2. **Transcription** - Whisper `large-v3` via CTranslate2, word-level timestamps.
+2. **Transcripts** - the corpus' own published transcripts
+   (`teamsleeping/sleeping-debate-transcribe`, word-level timestamps).
+   Nothing is re-transcribed; Whisper ASR is only an opt-in fallback for
+   recordings the published transcripts do not cover.
 3. **Turns** - words aligned to diarization speakers by temporal overlap;
    consecutive same-speaker words are merged (split on speaker change,
    pause > 0.8 s, or turn > 30 s).
