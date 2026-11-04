@@ -24,24 +24,32 @@ from voiceclap_scorer import VoiceCLAPScorer
 STAGE = "voiceclap"
 EMB_DIR = C.EMBEDDINGS / "voiceclap"
 
-_buffer: dict[str, list[np.ndarray]] = {}
+_buffer: dict[str, list[tuple[str, np.ndarray]]] = {}
 
 
 def score_paths(scorer, paths, batch_size):
     payloads, emb = scorer.score_batch(paths)
     fid = Path(paths[0]).parent.name
-    _buffer.setdefault(fid, []).append(emb)
+    # Keep each embedding next to the segment it belongs to. Storing the batch
+    # alone loses that pairing: a snippet that fails to decode still produces an
+    # error row but no embedding, so counting rows would shift every later row
+    # index in the .npy and point the Parquet at the wrong vector.
+    buf = _buffer.setdefault(fid, [])
+    for path, vec in zip(paths, emb):
+        buf.append((Path(path).stem, vec))
     return payloads
 
 
 def per_file(fid, idx, out_rows):
-    chunks = _buffer.pop(fid, None)
-    if not chunks:
+    pairs = _buffer.pop(fid, None)
+    if not pairs:
         return
-    emb = np.vstack(chunks).astype(np.float16)
+    emb = np.vstack([v for _, v in pairs]).astype(np.float16)
     EMB_DIR.mkdir(parents=True, exist_ok=True)
     np.save(EMB_DIR / f"{fid}.npy", emb)
-    ids = [r["segment_id"] for r in out_rows]
+    # ids.json is the authoritative row order of the .npy: one entry per
+    # embedding actually stored, not one per scored turn.
+    ids = [sid for sid, _ in pairs]
     (EMB_DIR / f"{fid}.ids.json").write_text(json.dumps(ids), encoding="utf-8")
 
 

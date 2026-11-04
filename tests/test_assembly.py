@@ -65,6 +65,7 @@ class TestCollectRows(unittest.TestCase):
         for stage in ("empathic", "voicenet", "voiceclap"):
             (C.SCORES / f"f.{stage}.jsonl").unlink(missing_ok=True)
         (C.EMBEDDINGS / "voiceclap" / "f.npy").unlink(missing_ok=True)
+        (C.EMBEDDINGS / "voiceclap" / "f.ids.json").unlink(missing_ok=True)
         (C.TURNS / "f.jsonl").write_text(
             "\n".join(json.dumps(t) for t in TURNS) + "\n", encoding="utf-8")
         if "empathic" not in drop:
@@ -90,6 +91,8 @@ class TestCollectRows(unittest.TestCase):
                 "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
             np.save(C.EMBEDDINGS / "voiceclap" / "f.npy",
                     np.ones((len(TURNS), 8), dtype=np.float16))
+            (C.EMBEDDINGS / "voiceclap" / "f.ids.json").write_text(
+                json.dumps([t["segment_id"] for t in TURNS]), encoding="utf-8")
 
     def test_full_join(self):
         rows, err, delta = A.collect_rows("f")
@@ -131,16 +134,41 @@ class TestCollectRows(unittest.TestCase):
         self.assertEqual(err, "no_turns")
         self.assertIsNone(delta)
 
-    def test_emb_row_counts_only_scored_turns(self):
-        # Drop the voiceclap score of the first turn: the second turn becomes row 0.
+    def test_emb_row_follows_ids_sidecar(self):
+        # Only the second turn was embedded, and ids.json says so: the row index
+        # must come from that sidecar, not from counting the turns that scored.
         rows = [{"segment_id": t["segment_id"], "duration": t["duration"],
                  "voiceclap_top5": [{"label": "calm", "sim": 0.4}],
                  "voiceclap_best": "calm", "voiceclap_best_sim": 0.4}
                 for t in TURNS[1:]]
         (C.SCORES / "f.voiceclap.jsonl").write_text(
             "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+        (C.EMBEDDINGS / "voiceclap" / "f.ids.json").write_text(
+            json.dumps(["f_00001"]), encoding="utf-8")
         out, _, delta = A.collect_rows("f")
         self.assertIsNone(out[0]["voiceclap_emb_row"])
+        self.assertEqual(out[1]["voiceclap_emb_row"], 0)
+        self.assertEqual(delta["with_voiceclap"], 1)
+
+    def test_error_row_is_missing_not_a_score(self):
+        # A snippet that fails to decode is written as {"error": ...}. It must
+        # not count as a scored turn, and must not consume an embedding index.
+        rows = [
+            {"segment_id": "f_00000", "duration": 1.0,
+             "error": "ValueError: array is too big"},
+            {"segment_id": "f_00001", "duration": 1.5,
+             "voiceclap_top5": [{"label": "calm", "sim": 0.4}],
+             "voiceclap_best": "calm", "voiceclap_best_sim": 0.4},
+        ]
+        (C.SCORES / "f.voiceclap.jsonl").write_text(
+            "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+        (C.EMBEDDINGS / "voiceclap" / "f.ids.json").write_text(
+            json.dumps(["f_00001"]), encoding="utf-8")
+        (C.EMBEDDINGS / "voiceclap" / "f.npy").write_text("", encoding="utf-8")
+        out, _, delta = A.collect_rows("f")
+        self.assertIsNone(out[0]["voiceclap_top5"])
+        self.assertIsNone(out[0]["voiceclap_emb_row"])
+        # The surviving turn still points at the vector stored for it.
         self.assertEqual(out[1]["voiceclap_emb_row"], 0)
         self.assertEqual(delta["with_voiceclap"], 1)
 

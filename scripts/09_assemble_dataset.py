@@ -99,29 +99,45 @@ def _json_default(o):
     return str(o)
 
 
+def read_scores(stage, fid):
+    """Rows for one file, minus segments that could not be scored.
+
+    A snippet damaged on disk yields an {"error": ...} row so the stage can carry
+    on with the rest of the file. It holds no model output, so it is treated as
+    missing rather than as a score whose value happens to be None.
+    """
+    return {sid: r for sid, r in read_jsonl(S.out_path(stage, fid)).items()
+            if "error" not in r}
+
+
 def collect_rows(fid):
     """Build every Parquet row of one recording, plus its stats delta."""
     turns_p = C.TURNS / f"{fid}.jsonl"
     if not turns_p.exists():
         return None, "no_turns", None
     turns = [json.loads(l) for l in turns_p.open(encoding="utf-8") if l.strip()]
-    emp = read_jsonl(S.out_path("empathic", fid))
-    vn = read_jsonl(S.out_path("voicenet", fid))
-    vc = read_jsonl(S.out_path("voiceclap", fid))
+    emp = read_scores("empathic", fid)
+    vn = read_scores("voicenet", fid)
+    vc = read_scores("voiceclap", fid)
 
-    emb_file = f"{EMB_REL}/{fid}.npy" if (C.EMBEDDINGS / "voiceclap" / f"{fid}.npy").exists() else None
-    rows, emb_row = [], 0
+    emb_p = C.EMBEDDINGS / "voiceclap" / f"{fid}.npy"
+    ids_p = C.EMBEDDINGS / "voiceclap" / f"{fid}.ids.json"
+    # Without ids.json the row order of the .npy is unknown, so the file is not
+    # referenced at all rather than pointed at with guessed indices.
+    emb_file = f"{EMB_REL}/{fid}.npy" if (emb_p.exists() and ids_p.exists()) else None
+    # ids.json records the order of the rows actually saved in the .npy, which
+    # is the only safe way to index it: a snippet that failed to score has no
+    # embedding, so its position cannot be inferred by counting turns.
+    emb_index = {}
+    if emb_file:
+        emb_index = {sid: i for i, sid in
+                     enumerate(json.loads(ids_p.read_text(encoding="utf-8")))}
+
+    rows = []
     for t in turns:
         sid = t["segment_id"]
-        e, n, c = emp.get(sid), vn.get(sid), vc.get(sid)
-        # Only reference an embedding row when the sidecar actually exists.
-        if c is not None and emb_file:
-            row_idx = emb_row
-        else:
-            row_idx = None
-        rows.append(build_record(fid, t, e, n, c, emb_file, row_idx))
-        if row_idx is not None:
-            emb_row += 1
+        rows.append(build_record(fid, t, emp.get(sid), vn.get(sid), vc.get(sid),
+                                 emb_file, emb_index.get(sid)))
 
     delta = {
         "files": 1,
