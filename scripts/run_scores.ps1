@@ -17,12 +17,17 @@ $ErrorActionPreference = 'Continue'
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
 function Pending {
-    # scored files per stage, from the same counter status.py uses
+    # scored files per stage, restricted to recordings the manifest calls usable.
+    # Globbing every *.index.jsonl would also count the diarization example
+    # fixture, which has no scores by design and would stop the loop from ever
+    # reaching zero.
     $out = python -c @"
-import sys
+import csv, sys
 sys.path.insert(0, 'scripts')
 import config as C
-idx = {p.name[:-len('.index.jsonl')] for p in C.SNIPPETS.glob('*.index.jsonl')}
+ok = {r["file_id"] for r in csv.DictReader(open(C.MANIFESTS / "files.csv", encoding="utf-8"))
+      if r.get("status") in ("ok", "skip")}
+idx = {p.name[:-len('.index.jsonl')] for p in C.SNIPPETS.glob('*.index.jsonl')} & ok
 def done(suffix):
     return {p.name[:-len(suffix)] for p in C.SCORES.glob('*' + suffix)} & idx
 print(len(idx) - len(done('.voicenet.jsonl')),
