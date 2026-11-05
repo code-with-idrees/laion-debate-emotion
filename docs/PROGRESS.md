@@ -55,3 +55,36 @@ three), drains every snippet that exists, and loops as new ones are cut.
   logged to `logs/bad_snippets.log`, and skipped.
 - `scripts/start_all.ps1` restarts all four jobs after a reboot (corpus pull,
   live pipeline, weights, scoring) and is invoked by a Startup shortcut.
+
+## 2026-11-05 22:30
+
+The audio side is unchanged and complete (2,890 recordings, 250,675 snippets).
+The two damaged snippets caused by the power cuts were re-cut and rescored.
+
+| model | scored | pending of 2,335 recordings that have snippets |
+|---|---|---|
+| VoiceNet | 2,335 | **0** |
+| Empathic-Insight | 2,335 | **0** |
+| VoiceCLAP | 1,010 | **1,380** |
+
+VoiceCLAP is the only stage left. It runs at 2.0 files/min at batch size 8
+(measured over five minutes: 1.20 -> 2.00 files/min versus batch 2, with GPU
+utilisation rising from 22% to 66%), so roughly 11 hours remain, after which
+`09_assemble_dataset.py` runs automatically.
+
+Fixes made while checking the endgame:
+
+- The pending check never actually ran: PowerShell 5.1 strips double quotes from
+  a multi-line `python -c` here-string, so it printed nothing and the loop ran
+  every stage on every pass. It is now `scripts/pending.py`, covered by tests.
+- Recordings that align to zero turns have an empty snippet index and can never
+  be scored; they were counted as pending forever, which would have stopped
+  assembly from ever firing. Pending now requires at least one snippet.
+- A failed snippet could shift VoiceCLAP's embedding row indices, pointing
+  later turns at the wrong voice vector. The `.npy` writer records `ids.json`
+  from the actual pairs and assembly resolves through it.
+- `scripts/verify_dataset.py` checks the final Parquet's invariants, including
+  every embedding pointer, so the dataset can be signed off in one command.
+
+85 tests pass.
+
