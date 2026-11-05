@@ -1,4 +1,4 @@
-# Supervisor for the three LAION scoring stages.
+﻿# Supervisor for the three LAION scoring stages.
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\run_scores.ps1
 #
@@ -17,30 +17,11 @@ $ErrorActionPreference = 'Continue'
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
 function Pending {
-    # scored files per stage, restricted to recordings the manifest calls usable.
-    # Globbing every *.index.jsonl would also count the diarization example
-    # fixture, which has no scores by design and would stop the loop from ever
-    # reaching zero.
-    $out = python -c @"
-import csv, sys
-sys.path.insert(0, 'scripts')
-import config as C
-ok = {r["file_id"] for r in csv.DictReader(open(C.MANIFESTS / "files.csv", encoding="utf-8"))
-      if r.get("status") in ("ok", "skip")}
-def has_snippets(p):
-    # A few recordings align to zero turns, so their index is empty. No stage can
-    # ever score them, and counting them would keep pending above zero forever.
-    with open(p, encoding="utf-8") as fh:
-        return any(line.strip() for line in fh)
-idx = {p.name[:-len('.index.jsonl')] for p in C.SNIPPETS.glob('*.index.jsonl')
-       if has_snippets(p)} & ok
-def done(suffix):
-    return {p.name[:-len(suffix)] for p in C.SCORES.glob('*' + suffix)} & idx
-print(len(idx) - len(done('.voicenet.jsonl')),
-      len(idx) - len(done('.empathic.jsonl')),
-      len(idx) - len(done('.voiceclap.jsonl')))
-"@
-    return $out
+    # scripts\pending.py prints "voicenet empathic voiceclap" pending counts.
+    # It is a file, not an inline `python -c`: Windows PowerShell 5.1 drops the
+    # double quotes inside a multi-line here-string passed to a native command,
+    # so the inline version failed and returned nothing.
+    return (python scripts\pending.py)
 }
 
 while ($true) {
@@ -54,9 +35,13 @@ while ($true) {
         break
     }
 
-    python -u scripts\07_score_voicenet.py --batch-size 16
-    python -u scripts\06_score_empathic.py --batch-size 16
-    python -u scripts\08_score_voiceclap.py --batch-size 2
+    # Only run a stage that still has work. A finished stage would otherwise
+    # re-scan all 2,890 manifests (and reload its model) on every pass, which is
+    # pure overhead once VoiceCLAP is the only stage left.
+    if ($p[0] -ne '0') { python -u scripts\07_score_voicenet.py --batch-size 16 }
+    if ($p[1] -ne '0') { python -u scripts\06_score_empathic.py --batch-size 16 }
+    if ($p[2] -ne '0') { python -u scripts\08_score_voiceclap.py --batch-size 8 }
 
     Start-Sleep 120
 }
+
