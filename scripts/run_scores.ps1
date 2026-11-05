@@ -27,7 +27,13 @@ sys.path.insert(0, 'scripts')
 import config as C
 ok = {r["file_id"] for r in csv.DictReader(open(C.MANIFESTS / "files.csv", encoding="utf-8"))
       if r.get("status") in ("ok", "skip")}
-idx = {p.name[:-len('.index.jsonl')] for p in C.SNIPPETS.glob('*.index.jsonl')} & ok
+def has_snippets(p):
+    # A few recordings align to zero turns, so their index is empty. No stage can
+    # ever score them, and counting them would keep pending above zero forever.
+    with open(p, encoding="utf-8") as fh:
+        return any(line.strip() for line in fh)
+idx = {p.name[:-len('.index.jsonl')] for p in C.SNIPPETS.glob('*.index.jsonl')
+       if has_snippets(p)} & ok
 def done(suffix):
     return {p.name[:-len(suffix)] for p in C.SCORES.glob('*' + suffix)} & idx
 print(len(idx) - len(done('.voicenet.jsonl')),
