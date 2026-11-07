@@ -124,9 +124,9 @@ already exists and is complete. `--overwrite` forces a redo of one stage.
   `outputs/<stage>/<id>.error.txt` and the run continues. Inspect those files
   before assembling: `09_assemble_dataset.py` only joins complete scores.
 - **Disk pressure** — largest consumers are the raw WAVs (436 GB), snippets
-  (~150 GB) and VoiceCLAP embeddings (~10 GB). Snippets can be deleted once all
-  four score files for a recording exist; raw audio only after every stage has
-  consumed it.
+  (62.7 GB of 16 kHz mono FLAC) and VoiceCLAP embeddings (~1 GB per 1,500
+  recordings). Snippets can be deleted once all four score files for a recording
+  exist; raw audio only after every stage has consumed it.
 
 ## Restarting after a crash
 
@@ -154,3 +154,27 @@ python scripts\08_score_voiceclap.py --ids diarization_example
 
 `tests/manual/` has the three GPU smoke tests used to verify a machine before a
 multi-day run.
+
+## Verifying the assembled dataset
+
+`run_scores.ps1` assembles the Parquet itself once `scripts\pending.py` reports
+no work left. Check the result with:
+
+```powershell
+python scripts\verify_dataset.py                    # whole file
+python scripts\verify_dataset.py --sample 5000      # quick pass on big files
+```
+
+It fails on duplicate `(file_id, segment_id)`, `end <= start`, a duration that
+disagrees with the boundaries, missing speaker/text, and — the failure that
+would otherwise be invisible — a VoiceCLAP embedding pointer that resolves
+through `ids.json` to a different segment. `stats.json` next to the Parquet
+records coverage per model, speech hours, and how many zero-length turns were
+dropped.
+
+To see what the loop is waiting on at any moment:
+
+```powershell
+python scripts\pending.py      # voicenet empathic voiceclap pending counts
+```
+
