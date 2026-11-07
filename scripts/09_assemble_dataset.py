@@ -134,8 +134,16 @@ def collect_rows(fid):
                      enumerate(json.loads(ids_p.read_text(encoding="utf-8")))}
 
     rows = []
+    dropped = 0
     for t in turns:
         sid = t["segment_id"]
+        # A handful of turns end where they start: the last word of the group
+        # carried a zero timestamp. They were cut into ~0.1 s clips, so their
+        # model values describe a sliver of silence, not speech. Record the
+        # count and leave them out.
+        if float(t["end"]) <= float(t["start"]):
+            dropped += 1
+            continue
         rows.append(build_record(fid, t, emp.get(sid), vn.get(sid), vc.get(sid),
                                  emb_file, emb_index.get(sid)))
 
@@ -151,6 +159,7 @@ def collect_rows(fid):
         "voiceclap_top1": Counter(r["voiceclap_best"]
                                   for r in rows if r["voiceclap_best"]),
         "speakers": {r["speaker"] for r in rows},
+        "dropped_zero_length": dropped,
     }
     return rows, None, delta
 
@@ -159,8 +168,8 @@ def merge_stats(stats, delta):
     if not delta:
         return
     for k in ("files", "turns", "speech_s", "with_empathic", "with_voicenet",
-              "with_voiceclap"):
-        stats[k] += delta[k]
+              "with_voiceclap", "dropped_zero_length"):
+        stats[k] = stats.get(k, 0) + delta.get(k, 0)
     stats["empathic_top1"].update(delta["empathic_top1"])
     stats["voiceclap_top1"].update(delta["voiceclap_top1"])
     stats["speakers"] |= delta["speakers"]
@@ -184,7 +193,7 @@ def main():
     tmp = out.with_name(out.name + ".tmp")
 
     stats = {"files": 0, "turns": 0, "speech_s": 0.0, "with_empathic": 0,
-             "with_voicenet": 0, "with_voiceclap": 0,
+             "with_voicenet": 0, "with_voiceclap": 0, "dropped_zero_length": 0,
              "empathic_top1": Counter(), "voiceclap_top1": Counter(),
              "speakers": set()}
 
@@ -265,6 +274,7 @@ def main():
         "files": stats["files"],
         "speakers": len(stats["speakers"]),
         "speech_hours": round(stats["speech_s"] / 3600, 3),
+        "dropped_zero_length": stats["dropped_zero_length"],
         "coverage": {
             "empathic": round(stats["with_empathic"] / max(stats["turns"], 1), 4),
             "voicenet": round(stats["with_voicenet"] / max(stats["turns"], 1), 4),

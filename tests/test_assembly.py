@@ -173,6 +173,33 @@ class TestCollectRows(unittest.TestCase):
         self.assertEqual(delta["with_voiceclap"], 1)
 
 
+    def test_zero_length_turn_is_dropped(self):
+        # The last word of a turn can carry a zero timestamp, producing a turn
+        # that starts and ends at the same instant. It was scored as a sliver of
+        # audio; it must not reach the dataset.
+        extra = {"segment_id": "f_00002", "file_id": "f", "start": 2.5, "end": 2.5,
+                 "duration": 0.0, "speaker": "speaker_0", "text": "the end",
+                 "n_words": 2, "overlap": 0.0, "asr_confidence": 0.9}
+        with (C.TURNS / "f.jsonl").open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(extra) + "\n")
+        payloads = {
+            "empathic": {"empathic": {"Joy": 0.5}, "empathic_top5": []},
+            "voicenet": {"voicenet": {"reg": {}, "cls": {}, "conf": {}}},
+            "voiceclap": {"voiceclap_top5": [{"label": "calm", "sim": 0.4}],
+                          "voiceclap_best": "calm", "voiceclap_best_sim": 0.4},
+        }
+        for stage, payload in payloads.items():
+            row = {"segment_id": "f_00002", "duration": 0.0, **payload}
+            with (C.SCORES / f"f.{stage}.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row) + "\n")
+
+        rows, err, delta = A.collect_rows("f")
+        self.assertIsNone(err)
+        self.assertEqual([r["segment_id"] for r in rows], ["f_00000", "f_00001"])
+        self.assertEqual(delta["dropped_zero_length"], 1)
+        self.assertEqual(delta["turns"], 2)
+
+
 class TestMergeStats(unittest.TestCase):
     def test_merge(self):
         stats = {"files": 0, "turns": 0, "speech_s": 0.0, "with_empathic": 0,
