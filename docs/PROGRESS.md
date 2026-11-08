@@ -88,3 +88,33 @@ Fixes made while checking the endgame:
 
 85 tests pass.
 
+## 2026-11-08 18:43 - complete
+
+The build finished and the dataset verified clean.
+
+| | |
+|---|---|
+| rows | **250,620 speaker turns** |
+| source recordings | 2,335 |
+| speakers | 8 |
+| speech | **963.19 hours** |
+| coverage | empathic **100%**, voicenet **100%**, voiceclap **100%** |
+| parquet | `dataset/data/train-00000-of-00001.parquet` (0.34 GB) |
+| dropped | 32 zero-length turns |
+
+`scripts/verify_dataset.py` reports `OK - no invariant violations` over all
+250,620 rows, including every VoiceCLAP embedding pointer.
+
+Not in the dataset by design: 555 recordings - 540 whose published transcript is
+empty or missing, and 15 that align to zero turns. Recovering them needs the
+opt-in Whisper fallback (`run_pipeline.py --whisper-asr`), not the corpus
+transcripts.
+
+Verified failure modes found before assembly, all fixed:
+
+- a stale pending count that would have looped forever without assembling;
+- an unreadable snippet that aborted the whole stage;
+- embedding row indices that shifted by one after a failed snippet;
+- turns whose closing word carried a zero timestamp.
+
+
