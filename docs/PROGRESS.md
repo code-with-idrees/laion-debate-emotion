@@ -118,3 +118,20 @@ Verified failure modes found before assembly, all fixed:
 - turns whose closing word carried a zero timestamp.
 
 
+
+## 2026-11-11 - second recovery pass
+
+Four more recordings recovered via Whisper re-transcription:
+Rmpysp5mWlg, hYA2wMJ0P1Y, dPWTd97R2Cw, jadPbiFNpsw.
+
+| | |
+|---|---|
+| rows | **326,212 speaker turns** |
+| source recordings | 2,866 |
+| speakers | 8 |
+| speech | **1188.96 hours** |
+| coverage | empathic 100%, voicenet 100%, voiceclap 100% |
+| dropped | 62 zero-length turns |
+| parquet | `dataset/data/train-00000-of-00001.parquet` (0.44 GB) |
+
+24 recordings remain excluded by design (empty transcripts / zero diarization).
